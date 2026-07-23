@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { PDFDocument } from 'pdf-lib';
 import { openDb } from '../src/db.js';
 import { sealPdf } from '../src/sealer.js';
 import { extractPageTexts } from '../src/pdfTools.js';
@@ -50,4 +51,19 @@ test('sealPdf stamps every page, records rows, and the printed seals verify', as
     assert.equal(row.seal, parsed.seal);
     assert.equal(row.digest, digest);
   }
+});
+
+test('sealed PDF carries hardening metadata and stays text-extractable', async () => {
+  const pdf = await makePdf(['Only page body.']);
+  const { sealedBytes } = await sealPdf(null, {
+    iisNo: 'R1-2026-000009',
+    pdfBytes: pdf,
+    keyProvider: kp,
+  });
+  const doc = await PDFDocument.load(sealedBytes);
+  assert.match(doc.getTitle(), /Sealed document R1-2026-000009 — CerVer/);
+  assert.match(doc.getSubject(), /do not modify/);
+  // text layer preserved -> Full-check still works
+  const texts = await extractPageTexts(sealedBytes);
+  assert.ok(parseFooter(texts[0]));
 });
