@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CerVer — Seal a Document (Staff)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <div class="crest" aria-hidden="true">EMB</div>
+        <div class="masthead-text">
+          <p class="eyebrow">Environmental Management Bureau · Region I</p>
+          <p class="office">Seal a Document · Staff</p>
+        </div>
+      </header>
+
+      <main>
+        <div class="intro">
+          <h1>Seal a signed document.</h1>
+          <p class="lede">
+            Upload the final signed PDF. Each page is stamped with a footer seal and
+            recorded, then the sealed PDF downloads — that copy is the one to print.
+          </p>
+        </div>
+
+        <form id="sealForm" autocomplete="off">
+          <label class="field-label" for="iisNo">IIS control number</label>
+          <input id="iisNo" type="text" spellcheck="false" placeholder="R1-2026-010734" />
+          <label class="field-label" for="sealFile">Signed PDF</label>
+          <input id="sealFile" type="file" accept="application/pdf" />
+          <button class="btn btn-primary" type="submit">Seal &amp; download</button>
+        </form>
+
+        <section class="result" id="result" hidden aria-live="polite"></section>
+      </main>
+
+      <footer class="colophon">
+        <p><a href="/">← Back to verification</a></p>
+        <p>Seal only the FINAL signed PDF — any later edit changes the page digests.</p>
+      </footer>
+    </div>
+    <script src="/seal.js"></script>
+  </body>
+</html>

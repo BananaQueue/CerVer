@@ -16,61 +16,82 @@
         </div>
       </header>
 
+      <nav class="modes" role="tablist" aria-label="Verification mode">
+        <button class="mode-btn is-active" data-mode="document" role="tab">Whole document</button>
+        <button class="mode-btn" data-mode="page" role="tab">One page</button>
+        <button class="mode-btn" data-mode="doc" role="tab">Full check</button>
+      </nav>
+
       <main>
-        <section class="intro">
-          <h1>Confirm a document is genuine.</h1>
-          <p class="lede">
-            Scan the QR code printed on an EMB document, or type its control number.
-            You'll see the authoritative record it was issued against.
-          </p>
-        </section>
-
-        <!-- SCANNER -->
-        <section class="scan" aria-label="Scan QR code">
-          <div class="viewport" id="viewport">
-            <span class="reg tl"></span><span class="reg tr"></span>
-            <span class="reg bl"></span><span class="reg br"></span>
-            <div id="reader"></div>
-            <div class="viewport-idle" id="viewportIdle">
-              <span class="scan-glyph" aria-hidden="true">▣</span>
-              <p>Camera preview</p>
-            </div>
+        <!-- MODE: transaction / document -->
+        <section id="mode-document" class="mode-panel">
+          <div class="intro">
+            <h1>Confirm a document is genuine.</h1>
+            <p class="lede">Scan the QR on an EMB document, or type its control number.</p>
           </div>
-          <button class="btn btn-primary" id="scanToggle" type="button">Start camera</button>
-          <p class="scan-hint" id="scanHint">Point the camera at the QR code in the corner of the page.</p>
-        </section>
 
-        <div class="rule"><span>or enter the control number</span></div>
+          <section class="scan" aria-label="Scan QR code">
+            <div class="viewport" id="viewport">
+              <span class="reg tl"></span><span class="reg tr"></span>
+              <span class="reg bl"></span><span class="reg br"></span>
+              <div id="reader"></div>
+              <div class="viewport-idle" id="viewportIdle">
+                <span class="scan-glyph" aria-hidden="true">▣</span>
+                <p>Camera preview</p>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="scanToggle" type="button">Start camera</button>
+            <p class="scan-hint" id="scanHint">Point the camera at the QR code in the corner of the page.</p>
+          </section>
 
-        <!-- MANUAL -->
-        <section class="manual" aria-label="Enter control number">
+          <div class="rule"><span>or enter the control number</span></div>
+
           <form id="manualForm" autocomplete="off">
             <label class="field-label" for="idInput">Control number / token</label>
             <div class="field-row">
-              <input
-                id="idInput"
-                name="id"
-                type="text"
-                inputmode="latin"
-                spellcheck="false"
-                placeholder="e.g. R1-2025-023099"
-              />
+              <input id="idInput" name="id" type="text" spellcheck="false" placeholder="e.g. R1-2025-023099" />
               <button class="btn btn-primary" type="submit">Verify</button>
             </div>
           </form>
           <ul class="samples" id="samples" aria-label="Try a sample">
             <li><button type="button" data-id="R1-2025-023099">R1-2025-023099</button></li>
             <li><button type="button" data-id="R1-2026-002465">R1-2026-002465</button></li>
-            <li><button type="button" data-id="EMBR1-2025-030436">EMBR1-2025-030436</button></li>
           </ul>
         </section>
 
-        <!-- RESULT -->
+        <!-- MODE: single page seal -->
+        <section id="mode-page" class="mode-panel" hidden>
+          <div class="intro">
+            <h1>Verify one page.</h1>
+            <p class="lede">Type or scan the seal line printed in the page footer.</p>
+          </div>
+          <form id="pageForm" autocomplete="off">
+            <label class="field-label" for="pageInput">Page seal line</label>
+            <input id="pageInput" type="text" spellcheck="false" placeholder="EMB · R1-2026-010734 · p3/7 · K1 · 7F2A-9C41" />
+            <label class="staff-toggle"><input type="checkbox" id="pageStaff" /> Staff mode (show authoritative page)</label>
+            <button class="btn btn-primary" type="submit">Verify page</button>
+          </form>
+        </section>
+
+        <!-- MODE: full document upload -->
+        <section id="mode-doc" class="mode-panel" hidden>
+          <div class="intro">
+            <h1>Full document check.</h1>
+            <p class="lede">Upload the PDF for a page-by-page alteration report.</p>
+          </div>
+          <form id="docForm" autocomplete="off">
+            <label class="field-label" for="docFile">Sealed PDF</label>
+            <input id="docFile" type="file" accept="application/pdf" />
+            <button class="btn btn-primary" type="submit">Check document</button>
+          </form>
+        </section>
+
         <section class="result" id="result" hidden aria-live="polite"></section>
       </main>
 
       <footer class="colophon">
-        <p>Records mirror the IIS transaction registry. A “needs staff check” result means the document isn’t in the local registry yet — not that it’s fake.</p>
+        <p><a href="/seal.html">Staff · seal a document →</a></p>
+        <p>A “needs staff check” or “not sealed” result means a document isn’t in the registry yet — not that it’s fake.</p>
       </footer>
     </div>
 

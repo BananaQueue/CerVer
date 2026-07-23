@@ -245,3 +245,114 @@ async function stopScan() {
 }
 
 scanToggle.addEventListener('click', () => (scanning ? stopScan() : startScan()));
+
+// ---- Mode switching ----
+const PAGE_STATES = {
+  page_verified: { ink: 'var(--stamp-green)', stamp: 'Page ok', sub: 'Authentic seal', eyebrow: 'Authentic page seal', msg: 'This page’s seal is genuine for its position in the document.' },
+  invalid_seal: { ink: 'var(--stamp-red)', stamp: 'Bad seal', sub: 'Not authentic', eyebrow: 'Invalid seal', msg: 'This code is not a valid EMB seal for this page. Treat the copy with caution.' },
+  not_sealed: { ink: 'var(--stamp-amber)', stamp: 'Not sealed', sub: 'No record', eyebrow: 'No sealed page found', msg: 'No sealed page matches this code. It may be unsealed or from another document.' },
+  page_count_mismatch: { ink: 'var(--stamp-amber)', stamp: 'Count off', sub: 'Page count', eyebrow: 'Page-count mismatch', msg: 'This code claims a different total page count than the registered document.' },
+  invalid_code: { ink: 'var(--stamp-slate)', stamp: 'Unreadable', sub: 'Bad format', eyebrow: 'Couldn’t read that', msg: 'That doesn’t look like a page seal line. Check for typos.' },
+};
+const PAGE_COLORS = { verified: 'var(--stamp-green)', content_altered: 'var(--stamp-red)', not_sealed: 'var(--stamp-amber)' };
+const PAGE_LABELS = { verified: 'verified', content_altered: 'altered', not_sealed: 'unsealed' };
+
+const panels = document.querySelectorAll('.mode-panel');
+document.querySelector('.modes').addEventListener('click', (e) => {
+  const btn = e.target.closest('.mode-btn');
+  if (!btn) return;
+  document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+  const mode = btn.dataset.mode;
+  panels.forEach((p) => (p.hidden = p.id !== 'mode-' + mode));
+  if (mode !== 'document' && scanning) stopScan();
+  resultEl.hidden = true;
+  resultEl.innerHTML = '';
+});
+
+// ---- Page-seal verification ----
+document.getElementById('pageForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const line = document.getElementById('pageInput').value.trim();
+  if (!line) return;
+  const staff = document.getElementById('pageStaff').checked ? '&staff=1' : '';
+  render({ status: 'loading' });
+  try {
+    const res = await fetch('/api/verify-page?line=' + encodeURIComponent(line) + staff);
+    renderPageResult(await res.json());
+  } catch {
+    render({ status: 'error' });
+  }
+});
+
+function renderPageResult(data) {
+  const s = PAGE_STATES[data.status] || PAGE_STATES.invalid_code;
+  const where = data.k && data.n ? `Page ${data.k} of ${data.n}` : '';
+  const staffLink =
+    data.authoritative && data.authoritative.sealedPdfPath
+      ? `<a class="link-btn" href="/api/page-image?doc=${encodeURIComponent(data.iisNo)}&k=${data.k}" target="_blank" rel="noopener">View authoritative page ↗</a>`
+      : '';
+  resultEl.hidden = false;
+  resultEl.style.setProperty('--state', s.ink);
+  resultEl.innerHTML = `
+    <div class="doc" style="--state:${s.ink}">
+      <div class="stamp">${esc(s.stamp)}<small>${esc(s.sub)}</small></div>
+      <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
+      <p class="doc-id">${esc(data.iisNo || '—')}</p>
+      <p class="doc-msg">${esc(where ? where + '. ' : '')}${esc(s.msg)}</p>
+      ${staffLink}
+      <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Verify another</button></div>
+    </div>`;
+  resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('againBtn').addEventListener('click', () => {
+    resultEl.hidden = true;
+    resultEl.innerHTML = '';
+  });
+}
+
+// ---- Full document check ----
+document.getElementById('docForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const file = document.getElementById('docFile').files[0];
+  if (!file) return;
+  render({ status: 'loading' });
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  try {
+    const res = await fetch('/api/verify-document', { method: 'POST', body: fd });
+    renderReport(await res.json());
+  } catch {
+    render({ status: 'error' });
+  }
+}, false);
+
+function renderReport(rep) {
+  const intact = rep.document.status === 'intact';
+  const ink = intact ? 'var(--stamp-green)' : 'var(--stamp-red)';
+  const rows = rep.pages
+    .map((p) => {
+      const st = PAGE_COLORS[p.status] || 'var(--stamp-slate)';
+      const label = PAGE_LABELS[p.status] || p.status;
+      return `<div class="page-item" style="--pstate:${st}"><span class="pnum">p${p.position}</span><span>${esc(p.iisNo || 'unsealed page')}</span><span class="pstatus">${esc(label)}</span></div>`;
+    })
+    .join('');
+  const findings = rep.findings.length
+    ? `<ul class="findings">${rep.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+    : '';
+  resultEl.hidden = false;
+  resultEl.style.setProperty('--state', ink);
+  resultEl.innerHTML = `
+    <div class="doc" style="--state:${ink}">
+      <div class="stamp">${intact ? 'Intact' : 'Tampered'}<small>${rep.document.actualPages} pp</small></div>
+      <div class="report-head"><span class="report-doc">${esc(rep.document.iisNo || 'Unknown document')}</span></div>
+      <p class="report-sub">${rep.document.claimedPages ? esc(rep.document.actualPages + ' of ' + rep.document.claimedPages + ' pages') : esc(rep.document.actualPages + ' pages')} · ${intact ? 'all seals genuine' : rep.findings.length + ' issue' + (rep.findings.length === 1 ? '' : 's')}</p>
+      <div class="pagelist">${rows}</div>
+      ${findings}
+      <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Check another</button></div>
+    </div>`;
+  resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  document.getElementById('againBtn').addEventListener('click', () => {
+    resultEl.hidden = true;
+    resultEl.innerHTML = '';
+    document.getElementById('docFile').value = '';
+  });
+}

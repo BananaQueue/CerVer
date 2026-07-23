@@ -8,6 +8,7 @@ const config = {
   dbPath: process.env.CERVER_DB || path.resolve('cerver.db'),
   port: Number(process.env.PORT || 3100),
   iisBaseUrl: process.env.CERVER_IIS_BASE || 'https://iis.emb.gov.ph',
+  sealedDir: process.env.CERVER_SEALED_DIR || path.resolve('sealed'),
 };
 
 export default config;

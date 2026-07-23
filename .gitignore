@@ -8,3 +8,6 @@ test/fixtures/sample.xlsx
 # dev artifacts
 scripts/shot-*.png
 logs_server.txt
+sealed/
+scripts/*.pdf
+scripts/s2-*.png
