@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test",
     "reindex": "node bin/reindex.js",
+    "gen-cert": "node bin/gen-cert.js",
     "start": "node src/server.js"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "html5-qrcode": "^2.3.8",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
-    "playwright": "^1.49.0"
+    "playwright": "^1.49.0",
+    "selfsigned": "^5.5.0"
   }
 }

@@ -22,8 +22,8 @@ function safeName(s) {
  * @param [deps.keyProvider] seal key provider (defaults to env-backed)
  * @param [deps.sealedDir]   where sealed PDFs are written
  */
-export function buildApp({ db, verify, keyProvider, sealedDir }) {
-  const app = Fastify({ logger: false });
+export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
+  const app = Fastify({ logger: false, https });
   const keys = keyProvider || defaultKeyProvider();
   const sealDir = sealedDir || config.sealedDir;
   const pageVerify = createPageVerifier({ db, keyProvider: keys });

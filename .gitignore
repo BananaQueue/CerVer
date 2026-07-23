@@ -11,3 +11,5 @@ logs_server.txt
 sealed/
 scripts/*.pdf
 scripts/s2-*.png
+
+certs/
