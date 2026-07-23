@@ -169,11 +169,35 @@ async function startScan() {
     scanHint.textContent = 'Scanner failed to load. Use manual entry below.';
     return;
   }
-  scanner = new Html5Qrcode('reader', { verbose: false });
+  // Prefer the browser's native, hardware-accelerated QR detector when present.
+  scanner = new Html5Qrcode('reader', {
+    verbose: false,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+    formatsToSupport: window.Html5QrcodeSupportedFormats
+      ? [window.Html5QrcodeSupportedFormats.QR_CODE]
+      : undefined,
+  });
+
+  // Scan box tracks ~72% of the viewfinder's short side, so a small corner QR
+  // still lands inside it without the user having to line it up perfectly.
+  const qrbox = (vw, vh) => {
+    const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
+    return { width: m, height: m };
+  };
+
+  // Ask for a high-res rear stream with continuous autofocus — small printed
+  // QR codes need the pixels and the focus to resolve.
+  const videoConstraints = {
+    facingMode: 'environment',
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    advanced: [{ focusMode: 'continuous' }],
+  };
+
   try {
     await scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
+      videoConstraints,
+      { fps: 15, qrbox, aspectRatio: 1.0 },
       (decodedText) => {
         stopScan();
         idInput.value = decodedText;
@@ -184,9 +208,27 @@ async function startScan() {
     scanning = true;
     viewport.classList.add('live');
     scanToggle.textContent = 'Stop camera';
-    scanHint.textContent = 'Hold steady over the QR code.';
+    scanHint.textContent = 'Fill the box with the QR code and hold steady — get close, it’s small.';
   } catch {
-    scanHint.textContent = 'Couldn’t open the camera. Grant permission, or use manual entry below.';
+    // Fall back to the simplest constraint set if the rich one is rejected.
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 15, qrbox, aspectRatio: 1.0 },
+        (decodedText) => {
+          stopScan();
+          idInput.value = decodedText;
+          verify(decodedText);
+        },
+        () => {}
+      );
+      scanning = true;
+      viewport.classList.add('live');
+      scanToggle.textContent = 'Stop camera';
+      scanHint.textContent = 'Fill the box with the QR code and hold steady — get close, it’s small.';
+    } catch {
+      scanHint.textContent = 'Couldn’t open the camera. Grant permission, or use manual entry below.';
+    }
   }
 }
 
