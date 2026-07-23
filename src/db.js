@@ -30,6 +30,17 @@ export function openDb(dbPath) {
       path            TEXT NOT NULL,
       client_hint     TEXT
     );
+    CREATE TABLE IF NOT EXISTS pages (
+      iis_no          TEXT NOT NULL,
+      page_no         INTEGER NOT NULL,
+      total_pages     INTEGER NOT NULL,
+      digest          TEXT NOT NULL,
+      seal            TEXT NOT NULL,
+      kid             TEXT NOT NULL,
+      sealed_pdf_path TEXT,
+      created_at      TEXT NOT NULL,
+      PRIMARY KEY (iis_no, page_no)
+    );
   `);
   return db;
 }
