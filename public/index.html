@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CerVer — EMB Document Verification</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <div class="crest" aria-hidden="true">EMB</div>
+        <div class="masthead-text">
+          <p class="eyebrow">Environmental Management Bureau · Region I</p>
+          <p class="office">Document Verification</p>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <h1>Confirm a document is genuine.</h1>
+          <p class="lede">
+            Scan the QR code printed on an EMB document, or type its control number.
+            You'll see the authoritative record it was issued against.
+          </p>
+        </section>
+
+        <!-- SCANNER -->
+        <section class="scan" aria-label="Scan QR code">
+          <div class="viewport" id="viewport">
+            <span class="reg tl"></span><span class="reg tr"></span>
+            <span class="reg bl"></span><span class="reg br"></span>
+            <div id="reader"></div>
+            <div class="viewport-idle" id="viewportIdle">
+              <span class="scan-glyph" aria-hidden="true">▣</span>
+              <p>Camera preview</p>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="scanToggle" type="button">Start camera</button>
+          <p class="scan-hint" id="scanHint">Point the camera at the QR code in the corner of the page.</p>
+        </section>
+
+        <div class="rule"><span>or enter the control number</span></div>
+
+        <!-- MANUAL -->
+        <section class="manual" aria-label="Enter control number">
+          <form id="manualForm" autocomplete="off">
+            <label class="field-label" for="idInput">Control number / token</label>
+            <div class="field-row">
+              <input
+                id="idInput"
+                name="id"
+                type="text"
+                inputmode="latin"
+                spellcheck="false"
+                placeholder="e.g. R1-2025-023099"
+              />
+              <button class="btn btn-primary" type="submit">Verify</button>
+            </div>
+          </form>
+          <ul class="samples" id="samples" aria-label="Try a sample">
+            <li><button type="button" data-id="R1-2025-023099">R1-2025-023099</button></li>
+            <li><button type="button" data-id="R1-2026-002465">R1-2026-002465</button></li>
+            <li><button type="button" data-id="EMBR1-2025-030436">EMBR1-2025-030436</button></li>
+          </ul>
+        </section>
+
+        <!-- RESULT -->
+        <section class="result" id="result" hidden aria-live="polite"></section>
+      </main>
+
+      <footer class="colophon">
+        <p>Records mirror the IIS transaction registry. A “needs staff check” result means the document isn’t in the local registry yet — not that it’s fake.</p>
+      </footer>
+    </div>
+
+    <script src="/vendor/html5-qrcode.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

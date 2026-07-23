@@ -4,3 +4,7 @@ cerver.db-*
 profile/
 *.log
 test/fixtures/sample.xlsx
+
+# dev artifacts
+scripts/shot-*.png
+logs_server.txt

@@ -1,0 +1,362 @@
+/* CerVer — EMB Region I Document Verification
+   Institutional pine on bond-paper; the result lands as a rubber-stamp impression. */
+
+:root {
+  --pine: #0b3d2e;
+  --pine-deep: #06251b;
+  --paper: #edefe8;
+  --card: #fbfbf7;
+  --ink: #14211b;
+  --muted: #6a776e;
+  --hair: #cdd3c9;
+  --stamp-green: #1b7a4d;
+  --stamp-red: #c0392b;
+  --stamp-amber: #b77a16;
+  --stamp-slate: #5b6b62;
+
+  --display: "Bahnschrift", "DIN Alternate", "Arial Narrow", system-ui, sans-serif;
+  --body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--body);
+  color: var(--ink);
+  background: var(--paper);
+  /* faint bond-paper grid, like a control-number ledger */
+  background-image:
+    linear-gradient(rgba(11, 61, 46, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 61, 46, 0.035) 1px, transparent 1px);
+  background-size: 26px 26px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sheet {
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: clamp(1.1rem, 4vw, 1.75rem);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Masthead ---- */
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--pine);
+}
+.crest {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  background: var(--pine);
+  color: var(--paper);
+  font-family: var(--display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 1.05rem;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 2px var(--pine), inset 0 0 0 3px var(--paper);
+}
+.eyebrow {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  color: var(--pine);
+}
+.office {
+  margin: 0.1rem 0 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+/* ---- Intro ---- */
+.intro { padding: 1.6rem 0 1.1rem; }
+h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(1.7rem, 7vw, 2.15rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+.lede {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.98rem;
+  max-width: 28ch;
+}
+
+/* ---- Scanner ---- */
+.scan { text-align: center; }
+.viewport {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background: var(--pine-deep);
+  border-radius: 3px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+#reader { width: 100%; height: 100%; }
+#reader video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+#reader img[alt="Info icon"], #reader__dashboard_section_csr span { display: none; }
+
+.viewport-idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  color: rgba(237, 239, 232, 0.6);
+  font-family: var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+.viewport-idle .scan-glyph { font-size: 2.6rem; line-height: 1; }
+.viewport.live .viewport-idle { display: none; }
+
+/* registration crop-marks — echo the corner-cropped QR on EMB docs */
+.reg {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(237, 239, 232, 0.85);
+  z-index: 2;
+  pointer-events: none;
+}
+.reg.tl { top: 10px; left: 10px; border-right: 0; border-bottom: 0; }
+.reg.tr { top: 10px; right: 10px; border-left: 0; border-bottom: 0; }
+.reg.bl { bottom: 10px; left: 10px; border-right: 0; border-top: 0; }
+.reg.br { bottom: 10px; right: 10px; border-left: 0; border-top: 0; }
+
+.scan-hint { margin: 0.7rem 0 0; font-size: 0.82rem; color: var(--muted); }
+
+/* ---- Buttons ---- */
+.btn {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  border: 0;
+  border-radius: 2px;
+  padding: 0.72rem 1.15rem;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--pine); color: var(--paper); }
+.btn-primary:hover { background: var(--pine-deep); }
+.scan .btn-primary { margin-top: 1rem; width: 100%; }
+
+.btn:focus-visible,
+input:focus-visible,
+.samples button:focus-visible {
+  outline: 2.5px solid var(--stamp-amber);
+  outline-offset: 2px;
+}
+
+/* ---- Divider ---- */
+.rule {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1.7rem 0;
+  color: var(--muted);
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+}
+.rule::before, .rule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+}
+
+/* ---- Manual entry ---- */
+.field-label {
+  display: block;
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.7rem;
+  color: var(--pine);
+  margin-bottom: 0.4rem;
+}
+.field-row { display: flex; gap: 0.5rem; }
+#idInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1.5px solid var(--hair);
+  border-radius: 2px;
+  background: var(--card);
+  color: var(--ink);
+}
+#idInput::placeholder { color: #a7b0a8; }
+#idInput:focus { border-color: var(--pine); }
+
+.samples {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+.samples button {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--pine);
+  background: transparent;
+  border: 1px dashed var(--hair);
+  border-radius: 2px;
+  padding: 0.28rem 0.5rem;
+  cursor: pointer;
+}
+.samples button:hover { border-color: var(--pine); background: rgba(11, 61, 46, 0.05); }
+
+/* ---- Result card + stamp ---- */
+.result { margin-top: 1.8rem; }
+.doc {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-top: 4px solid var(--state, var(--stamp-slate));
+  border-radius: 3px;
+  padding: 1.4rem 1.25rem 1.25rem;
+  box-shadow: 0 12px 30px -18px rgba(6, 37, 27, 0.5);
+  overflow: hidden;
+}
+
+.stamp {
+  position: absolute;
+  top: 1rem;
+  right: 0.9rem;
+  transform: rotate(-8deg);
+  border: 3px solid var(--state);
+  color: var(--state);
+  border-radius: 4px;
+  padding: 0.28rem 0.55rem;
+  font-family: var(--display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.92rem;
+  text-align: center;
+  line-height: 1.05;
+  opacity: 0.9;
+  mix-blend-mode: multiply;
+  animation: stamp-in 0.32s cubic-bezier(0.2, 1.4, 0.5, 1) both;
+}
+.stamp small {
+  display: block;
+  font-size: 0.52rem;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+  opacity: 0.85;
+}
+@keyframes stamp-in {
+  0% { transform: rotate(-8deg) scale(1.9); opacity: 0; }
+  60% { opacity: 0.95; }
+  100% { transform: rotate(-8deg) scale(1); opacity: 0.9; }
+}
+
+.doc-eyebrow {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.66rem;
+  color: var(--state, var(--muted));
+  margin: 0 0 0.15rem;
+  max-width: 62%;
+}
+.doc-id {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.9rem;
+  word-break: break-all;
+  max-width: 66%;
+}
+.doc-msg {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.fields { display: grid; gap: 0.7rem; border-top: 1px solid var(--hair); padding-top: 0.9rem; }
+.f-row { display: grid; grid-template-columns: 8.5rem 1fr; gap: 0.5rem; }
+.f-key {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  color: var(--muted);
+  padding-top: 0.1rem;
+}
+.f-val { font-size: 0.92rem; }
+.f-val.mono { font-family: var(--mono); font-size: 0.85rem; word-break: break-word; }
+
+.source-tag {
+  display: inline-block;
+  margin-top: 0.2rem;
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  color: var(--pine);
+  background: rgba(11, 61, 46, 0.08);
+  border-radius: 2px;
+  padding: 0.15rem 0.45rem;
+}
+
+.result-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.1rem; }
+.btn-ghost {
+  background: transparent;
+  color: var(--pine);
+  box-shadow: inset 0 0 0 1.5px var(--pine);
+}
+.btn-ghost:hover { background: rgba(11, 61, 46, 0.06); }
+
+/* ---- Colophon ---- */
+.colophon {
+  margin-top: auto;
+  padding-top: 1.5rem;
+}
+.colophon p {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-top: 1px solid var(--hair);
+  padding-top: 0.8rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp { animation: none; }
+  .btn { transition: none; }
+}
