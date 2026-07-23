@@ -1,0 +1,6 @@
+node_modules/
+cerver.db
+cerver.db-*
+profile/
+*.log
+test/fixtures/sample.xlsx
