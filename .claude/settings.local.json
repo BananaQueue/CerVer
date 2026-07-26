@@ -6,7 +6,11 @@
       "Bash(git -c 'user.name=Darwin Pua' -c user.email=darwinpua.engr@gmail.com commit -q -m 'Add CerVer verification design spec *)",
       "Bash(node -e \"try{const {DatabaseSync}=require\\('node:sqlite'\\); const d=new DatabaseSync\\(':memory:'\\); d.exec\\('CREATE TABLE t\\(a\\)'\\); d.prepare\\('INSERT INTO t VALUES\\(1\\)'\\).run\\(\\); console.log\\('node:sqlite OK ->', d.prepare\\('SELECT count\\(*\\) c FROM t'\\).get\\(\\)\\);}catch\\(e\\){console.log\\('node:sqlite FAIL:', e.message\\)}\")",
       "Bash(git commit -q -m 'docs: CerVer implementation plan *)",
-      "Bash(PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install)"
+      "Bash(PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install)",
+      "Bash(git -C D:/CerVer status)",
+      "Bash(git -C D:/CerVer stash list)",
+      "Bash(git -C D:/CerVer log --oneline -8)",
+      "Bash(npm test *)"
     ]
   }
 }
