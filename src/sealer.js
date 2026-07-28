@@ -12,8 +12,9 @@ function drawFrond(pg, seal) {
   const scale = 0.34; // emblem ~34pt tall
   const emblem = f.size * scale;
   const margin = 30;
+  const frondBottom = 40; // leave room for the seal line beneath the emblem
   const x = pg.getWidth() - margin - emblem;
-  const y = margin + emblem; // pdf-lib maps SVG (0,0) top-left here, drawing down
+  const y = frondBottom + emblem; // pdf-lib maps SVG (0,0) top-left here, drawing down
   const c = (o) => rgb(o.r, o.g, o.b);
   const common = { x, y, scale };
   pg.drawSvgPath(f.stem, { ...common, borderColor: c(f.colors.ink), borderWidth: 0.9 });
@@ -83,11 +84,12 @@ export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath 
     const footer = formatFooter({ iisNo, k, n, kid, seal });
 
     const pg = pdfPages[i];
-    const size = 8;
-    const w = font.widthOfTextAtSize(footer, size);
-    const x = Math.max(20, (pg.getWidth() - w) / 2);
-    pg.drawText(footer, { x, y: 24, size, font, color: INK });
     drawFrond(pg, seal);
+    // Seal line under the frond, small and right-aligned to the same margin.
+    const size = 6;
+    const w = font.widthOfTextAtSize(footer, size);
+    const x = Math.max(20, pg.getWidth() - 30 - w);
+    pg.drawText(footer, { x, y: 26, size, font, color: INK });
 
     if (upsert) upsert.run(iisNo, k, n, digest, seal, kid, sealedPdfPath, now);
     pages.push({ k, n, digest, seal, kid });
