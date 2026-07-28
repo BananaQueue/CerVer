@@ -275,10 +275,13 @@ document.getElementById('pageForm').addEventListener('submit', async (e) => {
   const line = document.getElementById('pageInput').value.trim();
   if (!line) return;
   const staff = document.getElementById('pageStaff').checked ? '&staff=1' : '';
+  const seal = (line.match(/[0-9A-Z]{4}-[0-9A-Z]{4}/) || [])[0] || '';
   render({ status: 'loading' });
   try {
     const res = await fetch('/api/verify-page?line=' + encodeURIComponent(line) + staff);
-    renderPageResult(await res.json());
+    const data = await res.json();
+    data._seal = seal;
+    renderPageResult(data);
   } catch {
     render({ status: 'error' });
   }
@@ -291,6 +294,10 @@ function renderPageResult(data) {
     data.authoritative && data.authoritative.sealedPdfPath
       ? `<a class="link-btn" href="/api/page-image?doc=${encodeURIComponent(data.iisNo)}&k=${data.k}" target="_blank" rel="noopener">View authoritative page ↗</a>`
       : '';
+  const frond =
+    data.status === 'page_verified' && window.frondSvgMarkup && data._seal
+      ? `<div class="frond-compare"><span class="frond-lbl">This page’s emblem</span><div class="frond-art">${window.frondSvgMarkup(data._seal, 76)}</div><span class="frond-hint">should match the frond printed lower-right</span></div>`
+      : '';
   resultEl.hidden = false;
   resultEl.style.setProperty('--state', s.ink);
   resultEl.innerHTML = `
@@ -299,6 +306,7 @@ function renderPageResult(data) {
       <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
       <p class="doc-id">${esc(data.iisNo || '—')}</p>
       <p class="doc-msg">${esc(where ? where + '. ' : '')}${esc(s.msg)}</p>
+      ${frond}
       ${staffLink}
       <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Verify another</button></div>
     </div>`;

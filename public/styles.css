@@ -443,6 +443,27 @@ input:focus-visible,
   position: relative;
 }
 .findings li::before { content: "▸"; position: absolute; left: 0; color: var(--stamp-red); }
+.frond-compare {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0.9rem 0 0.4rem;
+  padding: 0.8rem;
+  border: 1px dashed var(--hair);
+  border-radius: 3px;
+  background: rgba(11, 61, 46, 0.03);
+}
+.frond-lbl {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.62rem;
+  color: var(--pine);
+}
+.frond-art { line-height: 0; }
+.frond-hint { font-size: 0.72rem; color: var(--muted); }
+
 .colophon a { color: var(--pine); text-decoration: none; font-weight: 600; }
 .link-btn {
   display: inline-block;

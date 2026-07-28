@@ -1,8 +1,25 @@
 import { PDFDocument, StandardFonts, PDFName, rgb } from 'pdf-lib';
 import { extractPageTexts } from './pdfTools.js';
 import { canonicalize, digestPage, computeSeal, formatFooter } from './sealCode.js';
+import { frondSvg } from '../public/frond.js';
 
 const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
+
+// Draw the "living frond" emblem (seeded by the page seal) in the lower-right
+// corner. Same generator the verify UI uses, so printed and on-screen match.
+function drawFrond(pg, seal) {
+  const f = frondSvg(seal);
+  const scale = 0.34; // emblem ~34pt tall
+  const emblem = f.size * scale;
+  const margin = 30;
+  const x = pg.getWidth() - margin - emblem;
+  const y = margin + emblem; // pdf-lib maps SVG (0,0) top-left here, drawing down
+  const c = (o) => rgb(o.r, o.g, o.b);
+  const common = { x, y, scale };
+  pg.drawSvgPath(f.stem, { ...common, borderColor: c(f.colors.ink), borderWidth: 0.9 });
+  pg.drawSvgPath(f.leaves, { ...common, borderColor: c(f.colors.leaf), borderWidth: 0.75 });
+  pg.drawSvgPath(f.dot, { ...common, color: c(f.colors.gold) });
+}
 
 // Light hardening: bake in interactivity, drop document-level scripts/actions,
 // and stamp sealed metadata. Keeps the text layer intact (so the Full-check
@@ -70,6 +87,7 @@ export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath 
     const w = font.widthOfTextAtSize(footer, size);
     const x = Math.max(20, (pg.getWidth() - w) / 2);
     pg.drawText(footer, { x, y: 24, size, font, color: INK });
+    drawFrond(pg, seal);
 
     if (upsert) upsert.run(iisNo, k, n, digest, seal, kid, sealedPdfPath, now);
     pages.push({ k, n, digest, seal, kid });

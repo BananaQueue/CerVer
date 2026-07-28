@@ -10,7 +10,9 @@
       "Bash(git -C D:/CerVer status)",
       "Bash(git -C D:/CerVer stash list)",
       "Bash(git -C D:/CerVer log --oneline -8)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(git commit *)",
+      "Bash(node --test test/sealer.test.js)"
     ]
   }
 }
