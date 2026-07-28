@@ -45,6 +45,14 @@ test('unknown document -> not_sealed', async () => {
   assert.equal(r.status, 'not_sealed');
 });
 
+test('verifies with only control number, page, and seal (no n/kid)', async () => {
+  const { db, footer } = await seed();
+  const verify = createPageVerifier({ db, keyProvider: kp });
+  const r = verify({ iisNo: footer.iisNo, k: footer.k, seal: footer.seal });
+  assert.equal(r.status, 'page_verified');
+  assert.equal(r.n, 3); // total pages filled in from the record
+});
+
 test('staff path exposes authoritative page pointer', async () => {
   const { db, footer } = await seed();
   const verify = createPageVerifier({ db, keyProvider: kp });

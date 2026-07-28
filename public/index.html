@@ -67,8 +67,19 @@
             <p class="lede">Type or scan the seal line printed in the page footer.</p>
           </div>
           <form id="pageForm" autocomplete="off">
-            <label class="field-label" for="pageInput">Page seal line</label>
-            <input id="pageInput" type="text" spellcheck="false" placeholder="EMB · R1-2026-010734 · p3/7 · K1 · 7F2A-9C41" />
+            <label class="field-label" for="pgDoc">Control number</label>
+            <input id="pgDoc" type="text" spellcheck="false" placeholder="R1-2026-010734" />
+            <div class="pg-two">
+              <div>
+                <label class="field-label" for="pgK">Page #</label>
+                <input id="pgK" type="text" inputmode="numeric" spellcheck="false" placeholder="3" />
+              </div>
+              <div>
+                <label class="field-label" for="pgSeal">Seal code</label>
+                <input id="pgSeal" type="text" spellcheck="false" placeholder="7F2A-9C41" />
+              </div>
+            </div>
+            <p class="pg-tip">Reading the three bits printed lower-right. You can also paste the whole footer line into Control number.</p>
             <label class="staff-toggle"><input type="checkbox" id="pageStaff" /> Staff mode (show authoritative page)</label>
             <button class="btn btn-primary" type="submit">Verify page</button>
           </form>

@@ -123,7 +123,17 @@ function render(data) {
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   const againBtn = document.getElementById('againBtn');
-  if (againBtn) againBtn.addEventListener('click', reset);
+  if (againBtn)
+    againBtn.addEventListener('click', () => {
+      resultEl.hidden = true;
+      resultEl.innerHTML = '';
+      ['pgDoc', 'pgK', 'pgSeal'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      const doc = document.getElementById('pgDoc');
+      if (doc) doc.focus();
+    });
   const staffBtnEl = document.getElementById('staffBtn');
   if (staffBtnEl) staffBtnEl.addEventListener('click', () => verifyStaff(staffBtnEl.dataset.id));
 }
@@ -270,15 +280,59 @@ document.querySelector('.modes').addEventListener('click', (e) => {
 });
 
 // ---- Page-seal verification ----
+// Pull control number + page + seal out of a pasted footer line (only when it
+// clearly IS a footer, so a bare control number typed on its own isn't mangled).
+function parseFooterLoose(s) {
+  const raw = String(s || '');
+  if (!/·|EMB\b|p\s*\d+\s*\//i.test(raw)) return null;
+  const up = raw.toUpperCase();
+  const iis = (up.match(/R1-(?:19|20)\d\d-\d{3,}/) || [])[0];
+  const seals = [...up.matchAll(/[A-Z2-7]{4}-[A-Z2-7]{4}/g)].map((m) => m[0]);
+  const kM = up.match(/P\s*(\d+)\s*\//);
+  const seal = seals.length ? seals[seals.length - 1] : null;
+  return iis && seal ? { iisNo: iis, k: kM ? kM[1] : '', seal } : null;
+}
+function canonDoc(s) {
+  return String(s || '').trim().toUpperCase().replace(/^EMB(?=R1-)/, '');
+}
+function normSeal(s) {
+  const t = String(s || '').trim().toUpperCase().replace(/[^0-9A-Z]/g, '');
+  return t.length === 8 ? t.slice(0, 4) + '-' + t.slice(4) : t;
+}
+
 document.getElementById('pageForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const line = document.getElementById('pageInput').value.trim();
-  if (!line) return;
+  const docEl = document.getElementById('pgDoc');
+  const kEl = document.getElementById('pgK');
+  const sealEl = document.getElementById('pgSeal');
+
+  const pasted = parseFooterLoose(docEl.value) || parseFooterLoose(sealEl.value);
+  let doc, k, seal;
+  if (pasted) {
+    doc = pasted.iisNo;
+    k = pasted.k || (kEl.value.match(/\d+/) || [])[0] || '';
+    seal = pasted.seal;
+    docEl.value = doc;
+    kEl.value = k;
+    sealEl.value = seal;
+  } else {
+    doc = canonDoc(docEl.value);
+    k = (kEl.value.match(/\d+/) || [])[0] || '';
+    seal = normSeal(sealEl.value);
+  }
+
+  if (!doc || !k || !seal) {
+    renderPageResult({ status: 'invalid_code' });
+    return;
+  }
+
   const staff = document.getElementById('pageStaff').checked ? '&staff=1' : '';
-  const seal = (line.match(/[0-9A-Z]{4}-[0-9A-Z]{4}/) || [])[0] || '';
   render({ status: 'loading' });
   try {
-    const res = await fetch('/api/verify-page?line=' + encodeURIComponent(line) + staff);
+    const res = await fetch(
+      `/api/verify-page?doc=${encodeURIComponent(doc)}&k=${encodeURIComponent(k)}&seal=${encodeURIComponent(seal)}` +
+        staff
+    );
     const data = await res.json();
     data._seal = seal;
     renderPageResult(data);

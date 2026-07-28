@@ -32,24 +32,30 @@ export function createPageVerifier({ db, keyProvider }) {
       }
     };
 
-    if (!parsed || !parsed.seal) {
+    const kNum = parsed ? Number(parsed.k) : NaN;
+    if (!parsed || !parsed.seal || !parsed.iisNo || !Number.isFinite(kNum)) {
       log('invalid_code', null);
       return { status: 'invalid_code' };
     }
 
-    const { iisNo, k, n } = parsed;
+    const { iisNo } = parsed;
+    const k = kNum;
+    // n and kid are optional inputs — total pages and key id come from the record.
+    const claimedN = Number.isFinite(Number(parsed.n)) ? Number(parsed.n) : null;
+
     const row = rowStmt ? rowStmt.get(iisNo, k) : null;
     if (!row) {
       log('not_sealed', iisNo);
-      return { status: 'not_sealed', iisNo, k, n };
+      return { status: 'not_sealed', iisNo, k, n: claimedN };
     }
-    if (row.total_pages !== n) {
+    const n = row.total_pages;
+    if (claimedN !== null && n !== claimedN) {
       log('page_count_mismatch', iisNo);
-      return { status: 'page_count_mismatch', iisNo, k, n, expectedPages: row.total_pages };
+      return { status: 'page_count_mismatch', iisNo, k, n: claimedN, expectedPages: n };
     }
 
     const secret = keyProvider.secretFor(row.kid);
-    const expected = computeSeal(secret, { iisNo, k, n: row.total_pages, digest: row.digest });
+    const expected = computeSeal(secret, { iisNo, k, n, digest: row.digest });
     const authentic = sealsEqual(expected, parsed.seal) && sealsEqual(row.seal, parsed.seal);
     if (!authentic) {
       log('invalid_seal', iisNo);
