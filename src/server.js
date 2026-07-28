@@ -6,15 +6,13 @@ import { createIisLookup } from './iisLookup.js';
 import { keyProvider } from './sealKeys.js';
 import { buildApp } from './app.js';
 
-// Serve HTTPS when certs/ exists (run `npm run gen-cert` once). The camera needs
-// a secure context — HTTPS makes it work on the LAN, not just localhost.
-let https;
+// Read the self-signed cert if present (run `npm run gen-cert` once).
+let tls;
 try {
-  https = { key: fs.readFileSync('certs/key.pem'), cert: fs.readFileSync('certs/cert.pem') };
+  tls = { key: fs.readFileSync('certs/key.pem'), cert: fs.readFileSync('certs/cert.pem') };
 } catch {
-  https = undefined;
+  tls = undefined;
 }
-const scheme = https ? 'https' : 'http';
 
 const db = openDb(config.dbPath);
 const iisLookup = createIisLookup({
@@ -22,21 +20,22 @@ const iisLookup = createIisLookup({
   profileDir: process.env.CERVER_IIS_PROFILE || 'profile',
 });
 const verify = createVerifier({ db, iisLookup });
-const app = buildApp({
-  db,
-  verify,
-  keyProvider: keyProvider(),
-  sealedDir: config.sealedDir,
-  https,
-});
 
-app
-  .listen({ port: config.port, host: '0.0.0.0' })
-  .then(() => {
-    console.log(`CerVer listening on ${scheme}://localhost:${config.port}`);
-    if (!https) console.log('(HTTP only — run `npm run gen-cert` to enable HTTPS + camera on the LAN)');
-  })
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+const buildOne = (https) =>
+  buildApp({ db, verify, keyProvider: keyProvider(), sealedDir: config.sealedDir, https });
+
+// HTTP on localhost (camera works on localhost even over http), and — when a cert
+// exists — HTTPS too, so the camera also works over the LAN (phones).
+try {
+  await buildOne(undefined).listen({ port: config.port, host: '0.0.0.0' });
+  console.log(`CerVer (HTTP)  http://localhost:${config.port}`);
+  if (tls) {
+    await buildOne(tls).listen({ port: config.httpsPort, host: '0.0.0.0' });
+    console.log(`CerVer (HTTPS) https://localhost:${config.httpsPort}  — use this on the LAN/phone for the camera`);
+  } else {
+    console.log('(no cert — run `npm run gen-cert` to enable HTTPS + camera on the LAN)');
+  }
+} catch (e) {
+  console.error(e);
+  process.exit(1);
+}

@@ -85,10 +85,16 @@ dev key is used if the env var is unset — **set a real one in production.**
 ```bash
 npm install            # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 recommended (uses system Chrome)
 node bin/reindex.js    # load the Excel registry into cerver.db
-npm start              # serve on http://localhost:3100
+npm run gen-cert       # once — self-signed cert so the camera works over the LAN
+npm start
 ```
 
-Open `http://localhost:3100/` on a phone (same network) to scan.
+The server listens on **both**:
+- `http://localhost:3100` — desktop / this machine (camera works: localhost is a
+  secure context even over http). The in-app preview also uses this.
+- `https://<LAN-IP>:3443` — phones / other devices. The camera needs HTTPS off
+  localhost; accept the self-signed cert warning once. (HTTPS only appears if
+  `npm run gen-cert` has been run.)
 
 ## Commands
 
