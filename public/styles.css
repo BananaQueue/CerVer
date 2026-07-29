@@ -503,3 +503,14 @@ input:focus-visible,
 #genForm .btn-primary, .scan #lcCam { width: 100%; }
 #lcVideo { width: 100%; height: 100%; object-fit: cover; display: none; }
 .viewport.live #lcVideo { display: block; }
+#markSel {
+  width: 100%;
+  font-family: var(--body);
+  font-size: 0.9rem;
+  padding: 0.7rem 0.8rem;
+  border: 1.5px solid var(--hair);
+  border-radius: 2px;
+  background: var(--card);
+  color: var(--ink);
+  margin-bottom: 0.9rem;
+}

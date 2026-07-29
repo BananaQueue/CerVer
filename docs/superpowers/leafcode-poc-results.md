@@ -160,6 +160,41 @@ the decoder.
 
 ---
 
+## Addendum (2026-07-29): stamping it on a real page
+
+The LeafCode was wired into the sealer as an opt-in mark (`mark=leafcode|both`)
+and stamped onto a real sealed PDF, tilted with a stem. Two findings, both
+measured rather than estimated:
+
+**1. Decoration must be nearly white.** On a rendered page the decoder's crop is
+overwhelmingly white paper, so Otsu's threshold lands high (**measured 213**).
+Decoration at grey 170 was therefore still classified *dark*, and because a leaf
+outline is one continuous stroke it bridged neighbouring dots into a single
+**23,049 px** blob — swamping the anchors and failing the decode outright.
+Pushing the outline and stem to ~grey 235 resolved that specific failure.
+
+**2. The mark is far too large to be practical.** Decode rate off an actual
+rendered page at ~2.66 px/pt (≈190 dpi capture):
+
+| Leaf size | Physical | Decodes |
+|---|---|---|
+| 110 pt | 39 mm | no |
+| 140 pt | 49 mm | no |
+| 170 pt | 60 mm | no |
+| 200 pt | 71 mm | **yes** |
+
+The earlier "~300 px minimum" figure came from the *synthetic* rasterizer, which
+has no anti-aliasing and no capture blur. On a real page those effects merge
+adjacent dots long before that limit — at 110 pt, single blobs measured 6,000+ px
+where one dot should be ~110 px.
+
+**Consequence:** at ~190 dpi capture the leaf needs to be about **7 cm** — a
+quarter of the page width — to decode, versus **15 mm** for the Data Matrix
+carrying the same payload. The 256-node lattice is simply too dense for a
+page-appropriate mark. Making it smaller requires redesigning the symbology with
+far fewer, larger nodes (fewer bits and/or less error correction), or restricting
+verification to high-resolution scans rather than phone captures.
+
 ## Recommendation
 
 **Keep the standard leaf-QR as the production per-page mark.** It scans with any

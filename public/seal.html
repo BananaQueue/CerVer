@@ -31,6 +31,12 @@
           <input id="iisNo" type="text" spellcheck="false" placeholder="R1-2026-010734" />
           <label class="field-label" for="sealFile">Signed PDF</label>
           <input id="sealFile" type="file" accept="application/pdf" />
+          <label class="field-label" for="markSel">Page mark</label>
+          <select id="markSel">
+            <option value="datamatrix">Data Matrix (standard)</option>
+            <option value="leafcode">LeafCode (experimental)</option>
+            <option value="both">Both — Data Matrix + LeafCode</option>
+          </select>
           <button class="btn btn-primary" type="submit">Seal &amp; download</button>
         </form>
 
