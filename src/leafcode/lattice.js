@@ -33,10 +33,18 @@ export function P(u, x) {
 // reproduced from this exact constant.
 const MIN_D = 24;
 const TRIES_CAP = 200000;
+// Anchors are drawn larger than data nodes (triangles ~35% bigger), so a
+// candidate node must clear each anchor by more than MIN_D or the two marks
+// will visually merge when photographed. 40 is comfortably above MIN_D=24
+// and accounts for the larger anchor mark.
+const ANCHOR_CLEARANCE = 40;
 
 export function lattice() {
   const rnd = mulberry32(SEED);
   const minD = MIN_D;
+  // Anchors are placed first (fixed positions, independent of rnd) so the
+  // rejection sampler below can keep data nodes clear of them.
+  const anchors = [P(0.9, 0), P(0.3, -hw(0.3) * 0.6), P(0.09, 0)];
   const nodes = [];
   let tries = 0;
   while (nodes.length < 256 && tries < TRIES_CAP) {
@@ -46,15 +54,20 @@ export function lattice() {
     const x = (rnd() * 2 - 1) * maxx;
     const p = P(u, x);
     let ok = true;
-    for (const n of nodes) {
-      const dx = n.x - p.x, dy = n.y - p.y;
-      if (dx * dx + dy * dy < minD * minD) { ok = false; break; }
+    for (const a of anchors) {
+      const dx = a.x - p.x, dy = a.y - p.y;
+      if (dx * dx + dy * dy < ANCHOR_CLEARANCE * ANCHOR_CLEARANCE) { ok = false; break; }
+    }
+    if (ok) {
+      for (const n of nodes) {
+        const dx = n.x - p.x, dy = n.y - p.y;
+        if (dx * dx + dy * dy < minD * minD) { ok = false; break; }
+      }
     }
     if (ok) nodes.push({ x: p.x, y: p.y, u });
   }
   if (nodes.length < 256) throw new Error(`lattice only placed ${nodes.length} nodes`);
   nodes.sort((a, b) => (a.u - b.u) || (a.x - b.x));
   const clean = nodes.map((n) => ({ x: n.x, y: n.y }));
-  const anchors = [P(0.9, 0), P(0.3, -hw(0.3) * 0.6), P(0.09, 0)];
   return { nodes: clean, anchors, hw, P };
 }
