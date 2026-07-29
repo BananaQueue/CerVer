@@ -19,6 +19,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
     "playwright": "^1.49.0",
+    "qrcode": "^1.5.4",
     "selfsigned": "^5.5.0"
   }
 }
