@@ -174,71 +174,73 @@ const viewport = document.getElementById('viewport');
 const scanToggle = document.getElementById('scanToggle');
 const scanHint = document.getElementById('scanHint');
 
+function showCameraError(e) {
+  console.error('CerVer camera:', e);
+  const n = (e && e.name) || '';
+  let msg;
+  if (n === 'NotAllowedError' || n === 'SecurityError') {
+    msg = 'Camera permission is blocked. Tap the camera / lock icon in the address bar → Allow → reload.';
+  } else if (n === 'NotFoundError' || n === 'DevicesNotFoundError' || n === 'OverconstrainedError') {
+    msg = 'No usable camera found on this device. Use manual entry below.';
+  } else if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') {
+    msg = 'The camera is being used by another app. Close it, then try again.';
+  } else {
+    msg = 'Couldn’t open the camera (' + (n || (e && e.message) || 'unknown') + '). Use manual entry below.';
+  }
+  scanHint.textContent = msg;
+}
+
 async function startScan() {
   if (typeof Html5Qrcode === 'undefined') {
-    scanHint.textContent = 'Scanner failed to load. Use manual entry below.';
+    scanHint.textContent = 'Scanner script didn’t load — reload the page and try again.';
     return;
   }
-  // Prefer the browser's native, hardware-accelerated QR detector when present.
-  scanner = new Html5Qrcode('reader', {
-    verbose: false,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-    formatsToSupport: window.Html5QrcodeSupportedFormats
-      ? [window.Html5QrcodeSupportedFormats.QR_CODE]
-      : undefined,
-  });
+  if (!window.isSecureContext || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    scanHint.textContent =
+      'The camera needs a secure page. On a phone, open the https://…:3443 address (accept the certificate warning once). On this PC use http://localhost.';
+    return;
+  }
 
-  // Scan box tracks ~72% of the viewfinder's short side, so a small corner QR
-  // still lands inside it without the user having to line it up perfectly.
+  // Scan box tracks ~72% of the viewfinder so a small corner QR still lands inside.
   const qrbox = (vw, vh) => {
     const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
     return { width: m, height: m };
   };
-
-  // Ask for a high-res rear stream with continuous autofocus — small printed
-  // QR codes need the pixels and the focus to resolve.
-  const videoConstraints = {
-    facingMode: 'environment',
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
-    advanced: [{ focusMode: 'continuous' }],
+  const cfg = { fps: 15, qrbox, aspectRatio: 1.0 };
+  const onScan = (text) => {
+    stopScan();
+    idInput.value = text;
+    verify(text);
   };
 
+  scanner = new Html5Qrcode('reader', {
+    verbose: false,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+  });
+
+  scanHint.textContent = 'Requesting camera…';
   try {
-    await scanner.start(
-      videoConstraints,
-      { fps: 15, qrbox, aspectRatio: 1.0 },
-      (decodedText) => {
-        stopScan();
-        idInput.value = decodedText;
-        verify(decodedText);
-      },
-      () => {}
-    );
+    // getCameras() triggers the permission prompt and returns real device ids —
+    // more reliable than facingMode, which desktop webcams often reject.
+    let cams = [];
+    try {
+      cams = await Html5Qrcode.getCameras();
+    } catch (permErr) {
+      return showCameraError(permErr);
+    }
+    if (!cams || !cams.length) {
+      scanHint.textContent = 'No camera found on this device. Use manual entry below.';
+      return;
+    }
+    const back =
+      cams.find((c) => /back|rear|environment/i.test(c.label || '')) || cams[cams.length - 1];
+    await scanner.start(back.id, cfg, onScan, () => {});
     scanning = true;
     viewport.classList.add('live');
     scanToggle.textContent = 'Stop camera';
-    scanHint.textContent = 'Fill the box with the QR code and hold steady — get close, it’s small.';
-  } catch {
-    // Fall back to the simplest constraint set if the rich one is rejected.
-    try {
-      await scanner.start(
-        { facingMode: 'environment' },
-        { fps: 15, qrbox, aspectRatio: 1.0 },
-        (decodedText) => {
-          stopScan();
-          idInput.value = decodedText;
-          verify(decodedText);
-        },
-        () => {}
-      );
-      scanning = true;
-      viewport.classList.add('live');
-      scanToggle.textContent = 'Stop camera';
-      scanHint.textContent = 'Fill the box with the QR code and hold steady — get close, it’s small.';
-    } catch {
-      scanHint.textContent = 'Couldn’t open the camera. Grant permission, or use manual entry below.';
-    }
+    scanHint.textContent = 'Fill the box with the QR and hold steady — get close, it’s small.';
+  } catch (err) {
+    showCameraError(err);
   }
 }
 
