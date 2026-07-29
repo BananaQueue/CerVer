@@ -72,7 +72,7 @@ test('no two data-node discs overlap at default px', () => {
   );
 });
 
-test('no two data-node discs overlap at px: 800 (the size Gate B uses)', () => {
+test('no two data-node discs overlap at px: 800 (another size the suite checks; Gate B itself renders at px=1000)', () => {
   const px = 800;
   const { nodeR } = defaultRadii(px);
   const gap = minNodeGap(px);
@@ -84,7 +84,7 @@ test('no two data-node discs overlap at px: 800 (the size Gate B uses)', () => {
 
 test('bit fidelity at default px: every node samples back its encoded bit', () => {
   const px = SPACE;
-  const s = px / px; // 1
+  const s = px / SPACE; // 1 at default px
   const bits = encode(PAYLOAD);
   const img = rasterize(bits, { px });
   const { nodes } = lattice();

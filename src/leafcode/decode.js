@@ -129,10 +129,6 @@ function components(bin, w, h) {
     let area = 0;
     let sx = 0;
     let sy = 0;
-    let minx = w;
-    let miny = h;
-    let maxx = -1;
-    let maxy = -1;
     while (sp > 0) {
       const p = stack[--sp];
       const px = p % w;
@@ -140,10 +136,6 @@ function components(bin, w, h) {
       area++;
       sx += px;
       sy += py;
-      if (px < minx) minx = px;
-      if (px > maxx) maxx = px;
-      if (py < miny) miny = py;
-      if (py > maxy) maxy = py;
       const y0 = py > 0 ? py - 1 : 0;
       const y1 = py < h - 1 ? py + 1 : h - 1;
       const x0 = px > 0 ? px - 1 : 0;
@@ -158,15 +150,10 @@ function components(bin, w, h) {
         }
       }
     }
-    const bw = maxx - minx + 1;
-    const bh = maxy - miny + 1;
     blobs.push({
       area,
       x: sx / area,
       y: sy / area,
-      fill: area / (bw * bh),
-      bw,
-      bh,
     });
   }
   return blobs;

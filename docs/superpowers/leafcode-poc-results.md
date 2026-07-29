@@ -74,17 +74,24 @@ px=1000):
 | blur radius 1 / 2 / 3 / 4 | 100% |
 | rotate 5° / 15° / 30° / 45° / 90° | 100% |
 | scale-down /1.5 / /2 / /3 / /4 | 100% |
-| noise 20 / 40 / 60 / 80 | 100% |
+| noise 20 / 40 / 60 / 80 [^noise] | 100% |
 | combo: blur1+rot5+noise20 (light photo) | 100% |
 | combo: blur2+rot15+noise40 (typical photo) | 100% |
 | combo: blur2+rot30+scale2+noise40 (poor photo) | 100% |
 | combo: blur3+rot45+scale3+noise60 (bad photo) | 100% |
 
+[^noise]: **Not an independent robustness axis** — see "On the noise results"
+    in the limitations section below. These rows are structurally guaranteed
+    to pass by the synthetic model and are not evidence of decoder
+    robustness the way the blur/scale/rotate rows are.
+
 **Measured cliffs beyond the required sweep:**
 
 - blur: r4 = 100% → **r5 = 0%**
 - scale-down: /4 = 100% → **/4.2 = 0%** ← thinnest margin of any axis
-- noise: 110 = 100% → **115 = 0%** (stable across 5 seeds)
+- noise: 110 = 100% → **115 = 0%** (stable across 5 seeds) — see "On the noise
+  results" below; this cliff is a property of `degrade.js`'s noise model, not
+  a measurement of decoder robustness.
 - rotation: **every angle 1°–180° decoded at 100%** — the three-anchor affine
   solve is genuinely rotation-invariant.
 
@@ -100,6 +107,25 @@ between `render.js` and `raster.js` matched with no drift.
 
 These bound how far the Gate B result should be trusted.
 
+**On the noise results.** `raster.js` emits a perfectly bimodal image — every
+pixel is either exactly 0 or exactly 255, with nothing in between — and
+`degrade.js`'s `noise()` adds uniform additive noise of amplitude *a* to each
+pixel independently. For any *a* ≤ 110, the two pixel classes stay strictly
+disjoint (the dark class lands in [0, 110], the light class in [145, 255]),
+so **any** global threshold placed between them — not just Otsu's, literally
+any fixed cutoff — separates the classes perfectly. The 100% pass rate on
+every noise row above is therefore **guaranteed by the structure of the
+synthetic test image**, not a measurement of the decoder's robustness to
+noise. Likewise the "110 → 115" cliff is not the decoder's classifier
+breaking down; it is simply the amplitude at which the two synthetic pixel
+classes first start to overlap. A real photograph is never perfectly
+bimodal (sensor noise, JPEG artifacts, and halftoning all produce a
+continuous grey distribution), so this axis says nothing about how the
+decoder will behave on a real capture. The noise rows are kept in the table
+for completeness, not deleted, but should not be read as an independent
+robustness axis alongside blur/scale/rotation, which do meaningfully stress
+the decoder.
+
 1. **Gate C (real print + camera) was never run.** Everything above degrades a
    *synthetic* raster with *synthetic* transforms. Not represented: lens optics,
    uneven lighting and shadow gradients, specular glare on paper, JPEG
@@ -109,15 +135,27 @@ These bound how far the Gate B result should be trusted.
    shear — but *not* perspective. A photo taken at an angle to the page induces
    projective distortion that this decoder cannot correct. A real handheld
    capture is rarely perfectly perpendicular. A 4th anchor would be needed.
+   Measured: perspective keystoning actually survives up to k≈0.1 and only
+   fails at k≈0.2, so this limitation as stated is slightly **pessimistic**
+   rather than optimistic — the affine solve has more slack for mild
+   perspective than the "affine-only" framing implies. Erring safe here is
+   fine, but worth knowing.
 3. **Failure is a sharp cliff, not a graceful decline.** Every axis goes
    100% → 0% within a narrow band. There is no "partial read" warning zone, so a
    marginal capture fails outright rather than degrading visibly.
 4. **Density is low.** 256 nodes carry 13 useful bytes. A QR of similar physical
    size carries far more, with far better-tested error correction.
-5. **Only CerVer can read it.** No off-the-shelf scanner, phone camera app, or
+5. **A lighting gradient defeats the single global Otsu threshold.** Measured:
+   at gradient strength ≈0.6, 0/3 payloads decoded. A single global threshold
+   cannot separate dark marks from light background when illumination varies
+   enough across the page — this concretely supports the "no lighting
+   gradients" concern in limitation 1 and the recommendation (below) to add
+   local/adaptive thresholding; it is expected to be a real problem under
+   uneven real-world lighting (a risk Gate C would need to confirm).
+6. **Only CerVer can read it.** No off-the-shelf scanner, phone camera app, or
    other agency's system can decode a LeafCode. That is the point (exclusivity),
    but it is also an operational liability.
-6. **Scale-down margin is thin** (/4 passes, /4.2 fails), which is the axis most
+7. **Scale-down margin is thin** (/4 passes, /4.2 fails), which is the axis most
    directly analogous to "photographed from too far away".
 
 ---

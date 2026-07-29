@@ -30,9 +30,13 @@ worth it?"* before investing further.
   ordered by a stable rule (sort by `u` then `x`). Encoder and decoder derive the
   identical positions. Organic-looking, fully known.
 - **3 triangular anchors** at fixed lattice-space positions (near tip, lower-left
-  edge, base), filled, ~35% larger than nodes, forming a **scalene** triangle so
-  the three inter-anchor distances are all distinct → unambiguous labeling and
-  orientation.
+  edge, base), filled, **1.8x the radius of nodes**, forming a **scalene**
+  triangle so the three inter-anchor distances are all distinct → unambiguous
+  labeling and orientation. The 1.8x factor (not the ~35% originally sketched
+  here) is what the implementation uses, because a triangle inscribed at
+  radius r has area ≈1.299r² versus a disc's ≈3.1416r² — anchors must be drawn
+  1.8x larger by radius to remain the largest marks **by area**, which is what
+  the blob-based decoder relies on to find them.
 - **1 bit per node:** solid dot = 1, hollow ring = 0. Tunable fallback:
   dot-present vs dot-absent, if hollow/solid proves unreliable on photos.
 - Midrib, secondary veins, and inter-node connecting lines are **decorative

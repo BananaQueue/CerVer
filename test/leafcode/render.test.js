@@ -42,17 +42,33 @@ test('geometry matches raster.js radii formulas at px=1000', () => {
   assert.ok(Math.abs(anchorR - 15.552) < 1e-6, `anchorR should be 15.552, got ${anchorR}`);
 });
 
-test('every node position from lattice() appears as a mark centre in the svg', () => {
+// Escape regex metacharacters (notably '.') so a formatted coordinate like
+// "123.45" is matched literally rather than "123" + any-char + "45".
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+test('every node position from lattice() appears as a mark centre (both x AND y) in the svg', () => {
   const bits = encode(PAYLOAD);
   const svg = renderSvg(bits);
   const { nodes, anchors } = lattice();
-  const s = SPACE / SPACE; // 1 at default px
+  const px = SPACE; // default renderSvg px
+  const s = px / SPACE; // 1 at default px
   for (const n of nodes) {
-    const cx = (n.x * s).toFixed(2);
+    const cxNum = Number((n.x * s).toFixed(2));
+    const cyNum = Number((n.y * s).toFixed(2));
+    const cxFrag = escapeRegex(String(cxNum));
+    const cyFrag = escapeRegex(String(cyNum));
     // fmt() in render.js rounds to 2dp and may differ by trailing zero
     // formatting, so match the numeric prefix rather than the exact string.
-    const re = new RegExp(`cx="${Number(cx)}(\\.\\d+)?"`);
-    assert.ok(re.test(svg), `expected a mark near x=${cx}`);
+    // Requiring cx AND cy together (in that order, as render.js emits them)
+    // closes the hole where only cx was checked -- a renderer that flipped
+    // or transposed the y axis would still have satisfied a cx-only match
+    // but fails this. The white clearance halo is drawn at the same (cx,cy)
+    // as its mark, so matching either tag still correctly proves the node
+    // position itself is present in the artwork.
+    const re = new RegExp(`cx="${cxFrag}(\\.\\d+)?" cy="${cyFrag}(\\.\\d+)?"`);
+    assert.ok(re.test(svg), `expected a mark centre at (${cxNum}, ${cyNum})`);
   }
   assert.equal(anchors.length, 3);
 });

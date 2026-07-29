@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { encode } from '../../src/leafcode/codec.js';
-import { rasterize } from '../../src/leafcode/raster.js';
+import { rasterize, defaultRadii } from '../../src/leafcode/raster.js';
 import { decode } from '../../src/leafcode/decode.js';
+import { lattice } from '../../src/leafcode/lattice.js';
 
 test('decode recovers payload from a clean raster', () => {
   const payload = 'CVR|R1-2026-010734|3|TQQ3-MTBT';
@@ -126,17 +127,92 @@ test('decode never throws on garbage input', () => {
   }
 });
 
-test('decode tolerates a single corrupted data dot (RS error correction)', () => {
-  const payload = 'CVR|R1-2026-010734|3|TQQ3-MTBT';
-  const img = rasterize(encode(payload));
-  // Paint a solid black square over one data node region far from the anchors,
-  // flipping whatever bit lives there. RS (9 byte corrections) must absorb it.
-  const { width, data } = img;
-  for (let y = 300; y < 320; y++) {
-    for (let x = 320; x < 340; x++) {
+// Paint a filled disc of the OPPOSITE colour over an entire node's footprint
+// at real lattice coordinates, so the node's sampled bit is genuinely
+// flipped (not just nudged): a solid (bit=1) node is painted white (erased
+// to background, reading back as hollow/absent), a hollow (bit=0) node is
+// painted solid dark (reading back as solid). `r` should cover the node's
+// full radius so the flip is unambiguous under decode.js's sampling.
+function invertNodeMark(img, cx, cy, r, wasSolid) {
+  const { width, height, data } = img;
+  const rcx = Math.round(cx);
+  const rcy = Math.round(cy);
+  const ri = Math.ceil(r);
+  const v = wasSolid ? 255 : 0; // erase a solid mark to white; fill a hollow mark to black
+  for (let dy = -ri; dy <= ri; dy++) {
+    for (let dx = -ri; dx <= ri; dx++) {
+      if (dx * dx + dy * dy > r * r) continue;
+      const x = rcx + dx;
+      const y = rcy + dy;
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
       const o = (y * width + x) * 4;
-      data[o] = data[o + 1] = data[o + 2] = 0;
+      data[o] = data[o + 1] = data[o + 2] = v;
+      data[o + 3] = 255;
     }
   }
+}
+
+// Corrupt every node in the given RS byte-groups (byteIdx*8 .. byteIdx*8+7),
+// inverting each node's actual bit so the byte value is guaranteed to
+// change (an 8-bit value XORed with all-ones can never equal itself).
+// Returns the number of nodes painted.
+function corruptByteGroups(img, nodes, bits, nodeR, byteIndices) {
+  let painted = 0;
+  for (const byteIdx of byteIndices) {
+    for (let b = 0; b < 8; b++) {
+      const i = byteIdx * 8 + b;
+      const n = nodes[i];
+      invertNodeMark(img, n.x, n.y, nodeR + 1, bits[i] === 1);
+      painted++;
+    }
+  }
+  return painted;
+}
+
+test('decode tolerates several corrupted data bytes (RS error correction)', () => {
+  const payload = 'CVR|R1-2026-010734|3|TQQ3-MTBT';
+  const bits = encode(payload);
+  const clean = rasterize(bits);
+  const cleanSnapshot = Uint8ClampedArray.prototype.slice.call(clean.data);
+  const img = rasterize(bits); // separate instance to corrupt
+
+  const { nodes } = lattice();
+  const { nodeR } = defaultRadii(img.width);
+
+  // Corrupt 3 whole RS byte-groups (24 of 256 nodes) -- comfortably inside
+  // RS's capacity of 9 corrected byte errors out of 32.
+  const painted = corruptByteGroups(img, nodes, bits, nodeR, [0, 10, 20]);
+  assert.equal(painted, 24);
+
+  // Prove the corruption is real: the damaged image must differ from a
+  // clean render of the same payload, by more than a handful of pixels, so
+  // this test can never silently regress into a no-op again.
+  let diffPixels = 0;
+  for (let o = 0; o < img.data.length; o += 4) {
+    if (img.data[o] !== cleanSnapshot[o]) diffPixels++;
+  }
+  assert.ok(diffPixels > 100, `expected substantial pixel diff from corruption, got ${diffPixels}`);
+  assert.notDeepEqual(img.data, cleanSnapshot);
+
   assert.equal(decode(img), payload);
+});
+
+test('decode returns null (never a wrong payload) when corruption exceeds RS capacity', () => {
+  const payload = 'CVR|R1-2026-010734|3|TQQ3-MTBT';
+  const bits = encode(payload);
+  const img = rasterize(bits);
+
+  const { nodes } = lattice();
+  const { nodeR } = defaultRadii(img.width);
+
+  // Corrupt 12 whole RS byte-groups (96 of 256 nodes) -- well beyond the
+  // 9-byte correction capacity out of 32. A verification system must fail
+  // CLOSED here: returning null is correct, returning some other plausible
+  // payload would be the worst possible failure mode.
+  const painted = corruptByteGroups(img, nodes, bits, nodeR, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(painted, 96);
+
+  const result = decode(img);
+  assert.notEqual(result, payload);
+  assert.equal(result, null);
 });
