@@ -35,7 +35,7 @@ print + camera) has not been tested, and that is the honest gap.
 | `src/leafcode/degrade.js` | Degradation harness (blur/rotate/scale/noise) |
 | `scripts/leafcode-parity.mjs` | Proves the real SVG decodes via headless Chrome |
 
-**53 automated tests pass.** No new npm dependencies were added (Node built-ins
+**60 automated tests pass** (103 including the production suite). No new npm dependencies were added (Node built-ins
 only); Playwright was already present for the parity check.
 
 ### Symbology as built
@@ -186,12 +186,24 @@ pursued, is in this order:
 - Multi-state nodes (size/fill combinations) remain out of scope — 1 bit/node
   was chosen deliberately for decodability.
 
-## Minor issues deferred from task reviews
+## Known issues remaining (accepted, not blocking)
+
+The final whole-branch review triaged these as documented known issues rather
+than defects to fix. All other review findings were fixed before the branch was
+kept.
 
 - `rs.js`: Berlekamp–Massey lacks the canonical leading-zero trim on the error
-  locator (can overstate degree → spurious `null`, never corrupt output); the
-  `synd[i-j]` access relies on an undocumented invariant worth a guard or comment;
-  no committed test pins the "must not mutate caller's array" contract.
-- `raster.test.js`: a confusing `const s = px / px; // 1` should read `px / SPACE`.
-- `decode.test.js`: no test exercises a rotated/skewed capture, though Gate B
-  covers rotation.
+  locator (can overstate degree → a spurious `null`, never corrupt output), and
+  the `synd[i-j]` access relies on an undocumented invariant `deg(errLoc) <= i`
+  — an out-of-bounds read would silently poison the discrepancy with `undefined`
+  rather than throwing. Neither is reachable at `nsym = 19`: 27,000 randomised
+  within-capacity trials produced 0 spurious nulls and 0 wrong outputs, and
+  4,000 over-capacity trials returned `null` every time with 0 miscorrections.
+  Worth a one-line guard if the RS codec is ever reused at a different `nsym`.
+- No committed test pins the "`rsDecode` must not mutate the caller's array"
+  contract, though the contract was verified to hold.
+
+**Guard added:** `test/leafcode/geometry.test.js` now fails loudly if the
+geometry constants duplicated across `lattice.js`, `raster.js`, `render.js` and
+`decode.js` ever drift apart — previously only the browser-dependent parity
+script would have caught that, and it is not part of `node --test`.
