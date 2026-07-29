@@ -8,7 +8,9 @@ import config from './config.js';
 import { keyProvider as defaultKeyProvider } from './sealKeys.js';
 import { createPageVerifier } from './pageVerifier.js';
 
-const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+const srcDir = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(srcDir, '..', 'public');
+const leafcodeDir = path.join(srcDir, 'leafcode');
 
 function safeName(s) {
   return String(s).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -106,6 +108,31 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     const single = await extractSinglePage(bytes, Number(req.query.k));
     reply.header('Content-Type', 'application/pdf').header('Content-Disposition', 'inline');
     return reply.send(Buffer.from(single));
+  });
+
+  // LeafCode (experimental): serve the modules as ESM so the browser can render
+  // and decode a LeafCode client-side. Read-only static JS; not part of the
+  // production verification path.
+  app.register(fastifyStatic, {
+    root: leafcodeDir,
+    prefix: '/leafcode/',
+    decorateReply: false,
+  });
+
+  // Server-rendered LeafCode SVG for a payload.
+  app.get('/api/leafcode.svg', async (req, reply) => {
+    const payload = String(req.query.payload || '').trim();
+    try {
+      const [{ encode }, { renderSvg }] = await Promise.all([
+        import('./leafcode/codec.js'),
+        import('./leafcode/render.js'),
+      ]);
+      const svg = renderSvg(encode(payload), { px: Number(req.query.px) || 1000 });
+      reply.header('Content-Type', 'image/svg+xml; charset=utf-8');
+      return reply.send(svg);
+    } catch (e) {
+      return reply.code(400).send({ error: String(e.message || e) });
+    }
   });
 
   app.register(fastifyStatic, { root: publicDir, prefix: '/' });
