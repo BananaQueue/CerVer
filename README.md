@@ -53,9 +53,11 @@ seals each page instead:
 seal_k = base32( HMAC-SHA256( secret[kid], IIS_No ‖ k ‖ n ‖ SHA256(page text) ) )[0:8]
 ```
 
-printed as a footer line: `EMB · R1-2026-010734 · p3/7 · K1 · 7F2A-9C41`. The
-secret is server-only, so the seal is unforgeable; it binds the document, the
-page position, and the page content.
+In the lower-right corner of each page it prints a **Data Matrix** (encoding
+`CVR|iisNo|k|seal`) with the human-readable seal line beneath it:
+`EMB · R1-2026-010734 · p3/7 · K1 · 7F2A-9C41`. The secret is server-only, so the
+seal is unforgeable; it binds the document, the page position, and the page
+content.
 
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
 page) → it stamps every page and records each page's digest → the downloaded
@@ -63,8 +65,9 @@ sealed PDF is the copy that gets printed.
 
 **Verification, three ways:**
 - **Whole document** — QR / control-number lookup (transaction verification).
-- **One page** — type/scan a page's footer seal → confirms the seal is authentic
-  for page k of n. Staff can then open the authoritative page to compare content.
+- **One page** — scan the page's Data Matrix with the camera (or type control
+  number + page + seal) → confirms the seal is authentic for page k of n. Staff
+  can then open the authoritative page to compare content.
 - **Full check** — upload the PDF → a page-by-page report that names exactly which
   pages were altered / inserted / removed / reordered (exact re-hash; no OCR).
 

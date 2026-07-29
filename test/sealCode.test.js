@@ -7,6 +7,8 @@ import {
   computeSeal,
   formatFooter,
   parseFooter,
+  payloadFor,
+  parsePayload,
   sealsEqual,
 } from '../src/sealCode.js';
 
@@ -46,6 +48,13 @@ test('computeSeal is deterministic and changes when any bound field changes', ()
   assert.notEqual(s, computeSeal('secret', { ...base, k: 4 }));
   assert.notEqual(s, computeSeal('secret', { ...base, n: 8 }));
   assert.notEqual(s, computeSeal('other', base));
+});
+
+test('Data Matrix payload round-trips', () => {
+  const p = payloadFor({ iisNo: 'R1-2026-010734', k: 3, seal: '7F2A-9C41' });
+  assert.equal(p, 'CVR|R1-2026-010734|3|7F2A-9C41');
+  assert.deepEqual(parsePayload(p), { iisNo: 'R1-2026-010734', k: 3, seal: '7F2A-9C41' });
+  assert.equal(parsePayload('https://example.com'), null);
 });
 
 test('sealsEqual is length-safe', () => {

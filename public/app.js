@@ -168,13 +168,7 @@ document.getElementById('samples').addEventListener('click', (e) => {
 });
 
 // ---- Camera scanning (html5-qrcode) ----
-let scanner = null;
-let scanning = false;
-const viewport = document.getElementById('viewport');
-const scanToggle = document.getElementById('scanToggle');
-const scanHint = document.getElementById('scanHint');
-
-function showCameraError(e) {
+function showCameraError(hintEl, e) {
   // html5-qrcode sometimes rejects with a plain string, not a DOMException.
   const text =
     typeof e === 'string'
@@ -196,81 +190,105 @@ function showCameraError(e) {
   } else {
     msg = 'Couldn’t open the camera: ' + (text || 'no detail') + '. Use manual entry below.';
   }
-  scanHint.textContent = msg;
+  hintEl.textContent = msg;
 }
 
-async function startScan() {
-  if (typeof Html5Qrcode === 'undefined') {
-    scanHint.textContent = 'Scanner script didn’t load — reload the page and try again.';
-    return;
-  }
-  if (!window.isSecureContext || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
-    scanHint.textContent =
-      'The camera needs a secure page. On a phone, open the https://…:3443 address (accept the certificate warning once). On this PC use http://localhost.';
-    return;
+// One reusable camera controller per scan area (whole-doc QR, one-page Data Matrix).
+function createScanner({ readerId, viewportId, toggleId, hintId, formats, idleHint, liveHint, startText, onDecode }) {
+  const viewport = document.getElementById(viewportId);
+  const toggle = document.getElementById(toggleId);
+  const hint = document.getElementById(hintId);
+  let inst = null;
+  let active = false;
+
+  async function start() {
+    if (typeof Html5Qrcode === 'undefined') {
+      hint.textContent = 'Scanner script didn’t load — reload the page and try again.';
+      return;
+    }
+    if (!window.isSecureContext || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      hint.textContent =
+        'The camera needs a secure page. On a phone, open the https://…:3443 address (accept the certificate warning once). On this PC use http://localhost.';
+      return;
+    }
+    const qrbox = (vw, vh) => {
+      const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
+      return { width: m, height: m };
+    };
+    if (inst) {
+      try { await inst.clear(); } catch { /* ignore */ }
+      inst = null;
+    }
+    const opts = { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
+    if (formats && window.Html5QrcodeSupportedFormats) {
+      const f = formats.map((n) => window.Html5QrcodeSupportedFormats[n]).filter((x) => x != null);
+      if (f.length) opts.formatsToSupport = f;
+    }
+    inst = new Html5Qrcode(readerId, opts);
+    hint.textContent = 'Requesting camera…';
+    try {
+      await inst.start(
+        { facingMode: 'environment' },
+        { fps: 15, qrbox, aspectRatio: 1.0 },
+        (text) => {
+          stop();
+          onDecode(text);
+        },
+        () => {}
+      );
+      active = true;
+      viewport.classList.add('live');
+      toggle.textContent = 'Stop camera';
+      hint.textContent = liveHint;
+    } catch (err) {
+      try { await inst.clear(); } catch { /* ignore */ }
+      inst = null;
+      showCameraError(hint, err);
+    }
   }
 
-  scanHint.textContent = 'Requesting camera…';
+  async function stop() {
+    if (inst && active) {
+      try { await inst.stop(); } catch { /* ignore */ }
+      try { await inst.clear(); } catch { /* ignore */ }
+    }
+    active = false;
+    inst = null;
+    viewport.classList.remove('live');
+    toggle.textContent = startText;
+    hint.textContent = idleHint;
+  }
 
-  const qrbox = (vw, vh) => {
-    const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
-    return { width: m, height: m };
-  };
-  const cfg = { fps: 15, qrbox, aspectRatio: 1.0 };
-  const onScan = (text) => {
-    stopScan();
+  toggle.addEventListener('click', () => (active ? stop() : start()));
+  return { start, stop, isActive: () => active };
+}
+
+const docScanner = createScanner({
+  readerId: 'reader',
+  viewportId: 'viewport',
+  toggleId: 'scanToggle',
+  hintId: 'scanHint',
+  formats: ['QR_CODE'],
+  idleHint: 'Point the camera at the QR code in the corner of the page.',
+  liveHint: 'Fill the box with the QR and hold steady — get close, it’s small.',
+  startText: 'Start camera',
+  onDecode: (text) => {
     idInput.value = text;
     verify(text);
-  };
+  },
+});
 
-  // Clear any half-initialised previous scanner so a retry doesn't collide.
-  if (scanner) {
-    try {
-      await scanner.clear();
-    } catch {
-      /* ignore */
-    }
-    scanner = null;
-  }
-  scanner = new Html5Qrcode('reader', {
-    verbose: false,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-  });
-
-  try {
-    // Single camera acquisition. A bare `facingMode: 'environment'` string is what
-    // html5-qrcode accepts, and the browser treats it as a soft preference — so it
-    // takes the rear camera when present and falls back to any camera on laptops,
-    // without a second open/close cycle (which triggers "camera in use" on Windows).
-    await scanner.start({ facingMode: 'environment' }, cfg, onScan, () => {});
-    scanning = true;
-    viewport.classList.add('live');
-    scanToggle.textContent = 'Stop camera';
-    scanHint.textContent = 'Fill the box with the QR and hold steady — get close, it’s small.';
-  } catch (err) {
-    try {
-      await scanner.clear();
-    } catch {
-      /* ignore */
-    }
-    scanner = null;
-    showCameraError(err);
-  }
-}
-
-async function stopScan() {
-  if (scanner && scanning) {
-    try { await scanner.stop(); } catch {}
-    try { await scanner.clear(); } catch {}
-  }
-  scanning = false;
-  scanner = null;
-  viewport.classList.remove('live');
-  scanToggle.textContent = 'Start camera';
-  scanHint.textContent = 'Point the camera at the QR code in the corner of the page.';
-}
-
-scanToggle.addEventListener('click', () => (scanning ? stopScan() : startScan()));
+const pageScanner = createScanner({
+  readerId: 'reader2',
+  viewportId: 'viewport2',
+  toggleId: 'scanToggle2',
+  hintId: 'scanHint2',
+  formats: ['DATA_MATRIX', 'QR_CODE'],
+  idleHint: 'Point at the square code beside the seal line, lower-right.',
+  liveHint: 'Hold steady over the square code.',
+  startText: 'Scan seal code',
+  onDecode: (text) => handlePagePayload(text),
+});
 
 // ---- Mode switching ----
 const PAGE_STATES = {
@@ -290,7 +308,8 @@ document.querySelector('.modes').addEventListener('click', (e) => {
   document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
   const mode = btn.dataset.mode;
   panels.forEach((p) => (p.hidden = p.id !== 'mode-' + mode));
-  if (mode !== 'document' && scanning) stopScan();
+  docScanner.stop();
+  pageScanner.stop();
   resultEl.hidden = true;
   resultEl.innerHTML = '';
 });
@@ -316,8 +335,26 @@ function normSeal(s) {
   return t.length === 8 ? t.slice(0, 4) + '-' + t.slice(4) : t;
 }
 
-document.getElementById('pageForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Decode a scanned Data Matrix payload (CVR|iisNo|k|seal).
+function parsePayloadClient(text) {
+  const m = String(text || '').match(/^CVR\|([^|]+)\|(\d+)\|([0-9A-Za-z-]+)/i);
+  return m ? { iisNo: m[1].toUpperCase(), k: m[2], seal: m[3].toUpperCase() } : null;
+}
+
+// Camera decode → fill the fields and verify.
+function handlePagePayload(text) {
+  const p = parsePayloadClient(text) || parseFooterLoose(text);
+  if (p && p.iisNo && p.k && p.seal) {
+    document.getElementById('pgDoc').value = p.iisNo;
+    document.getElementById('pgK').value = p.k;
+    document.getElementById('pgSeal').value = normSeal(p.seal);
+    submitPageVerify();
+  } else {
+    renderPageResult({ status: 'invalid_code' });
+  }
+}
+
+async function submitPageVerify() {
   const docEl = document.getElementById('pgDoc');
   const kEl = document.getElementById('pgK');
   const sealEl = document.getElementById('pgSeal');
@@ -355,6 +392,11 @@ document.getElementById('pageForm').addEventListener('submit', async (e) => {
   } catch {
     render({ status: 'error' });
   }
+}
+
+document.getElementById('pageForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  submitPageVerify();
 });
 
 function renderPageResult(data) {
@@ -364,10 +406,6 @@ function renderPageResult(data) {
     data.authoritative && data.authoritative.sealedPdfPath
       ? `<a class="link-btn" href="/api/page-image?doc=${encodeURIComponent(data.iisNo)}&k=${data.k}" target="_blank" rel="noopener">View authoritative page ↗</a>`
       : '';
-  const frond =
-    data.status === 'page_verified' && window.frondSvgMarkup && data._seal
-      ? `<div class="frond-compare"><span class="frond-lbl">This page’s emblem</span><div class="frond-art">${window.frondSvgMarkup(data._seal, 76)}</div><span class="frond-hint">should match the frond printed lower-right</span></div>`
-      : '';
   resultEl.hidden = false;
   resultEl.style.setProperty('--state', s.ink);
   resultEl.innerHTML = `
@@ -376,7 +414,6 @@ function renderPageResult(data) {
       <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
       <p class="doc-id">${esc(data.iisNo || '—')}</p>
       <p class="doc-msg">${esc(where ? where + '. ' : '')}${esc(s.msg)}</p>
-      ${frond}
       ${staffLink}
       <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Verify another</button></div>
     </div>`;

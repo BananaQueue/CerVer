@@ -1,25 +1,20 @@
 import { PDFDocument, StandardFonts, PDFName, rgb } from 'pdf-lib';
 import { extractPageTexts } from './pdfTools.js';
-import { canonicalize, digestPage, computeSeal, formatFooter } from './sealCode.js';
-import { frondSvg } from '../public/frond.js';
+import { canonicalize, digestPage, computeSeal, formatFooter, payloadFor } from './sealCode.js';
+import { dataMatrixPng } from './barcode.js';
 
 const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
 
-// Draw the "living frond" emblem (seeded by the page seal) in the lower-right
-// corner. Same generator the verify UI uses, so printed and on-screen match.
-function drawFrond(pg, seal) {
-  const f = frondSvg(seal);
-  const scale = 0.34; // emblem ~34pt tall
-  const emblem = f.size * scale;
+// Draw the scannable Data Matrix (encoding CVR|iisNo|k|seal) in the lower-right
+// corner, above the human-readable seal line. The camera reads this to verify.
+async function drawDataMatrix(pdf, pg, payload) {
+  const png = await dataMatrixPng(payload, { scale: 5 });
+  const img = await pdf.embedPng(png);
+  const size = 42; // pt, ~1.5 cm
   const margin = 30;
-  const frondBottom = 40; // leave room for the seal line beneath the emblem
-  const x = pg.getWidth() - margin - emblem;
-  const y = frondBottom + emblem; // pdf-lib maps SVG (0,0) top-left here, drawing down
-  const c = (o) => rgb(o.r, o.g, o.b);
-  const common = { x, y, scale };
-  pg.drawSvgPath(f.stem, { ...common, borderColor: c(f.colors.ink), borderWidth: 0.9 });
-  pg.drawSvgPath(f.leaves, { ...common, borderColor: c(f.colors.leaf), borderWidth: 0.75 });
-  pg.drawSvgPath(f.dot, { ...common, color: c(f.colors.gold) });
+  const x = pg.getWidth() - margin - size;
+  const y = 40; // sits above the seal line (baseline y=26)
+  pg.drawImage(img, { x, y, width: size, height: size });
 }
 
 // Light hardening: bake in interactivity, drop document-level scripts/actions,
@@ -84,8 +79,8 @@ export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath 
     const footer = formatFooter({ iisNo, k, n, kid, seal });
 
     const pg = pdfPages[i];
-    drawFrond(pg, seal);
-    // Seal line under the frond, small and right-aligned to the same margin.
+    await drawDataMatrix(src, pg, payloadFor({ iisNo, k, seal }));
+    // Human-readable seal line under the Data Matrix, right-aligned to the margin.
     const size = 6;
     const w = font.widthOfTextAtSize(footer, size);
     const x = Math.max(20, pg.getWidth() - 30 - w);

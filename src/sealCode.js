@@ -64,6 +64,17 @@ export function parseFooter(line) {
   return { iisNo: m[1], k: Number(m[2]), n: Number(m[3]), kid: m[4], seal: m[5] };
 }
 
+// Compact payload encoded in the per-page Data Matrix (n and kid are looked up).
+export function payloadFor({ iisNo, k, seal }) {
+  return `CVR|${iisNo}|${k}|${seal}`;
+}
+
+// Parse a scanned Data Matrix payload. Returns null if it isn't ours.
+export function parsePayload(text) {
+  const m = String(text ?? '').match(/^CVR\|([^|]+)\|(\d+)\|([0-9A-Za-z-]+)/i);
+  return m ? { iisNo: m[1].toUpperCase(), k: Number(m[2]), seal: m[3].toUpperCase() } : null;
+}
+
 // Constant-time string compare.
 export function sealsEqual(a, b) {
   const ba = Buffer.from(String(a ?? ''));

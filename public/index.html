@@ -64,8 +64,25 @@
         <section id="mode-page" class="mode-panel" hidden>
           <div class="intro">
             <h1>Verify one page.</h1>
-            <p class="lede">Type or scan the seal line printed in the page footer.</p>
+            <p class="lede">Scan the small square code in the page’s lower-right corner, or type the seal.</p>
           </div>
+
+          <section class="scan" aria-label="Scan seal code">
+            <div class="viewport" id="viewport2">
+              <span class="reg tl"></span><span class="reg tr"></span>
+              <span class="reg bl"></span><span class="reg br"></span>
+              <div id="reader2"></div>
+              <div class="viewport-idle" id="viewportIdle2">
+                <span class="scan-glyph" aria-hidden="true">▣</span>
+                <p>Scan the seal code</p>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="scanToggle2" type="button">Scan seal code</button>
+            <p class="scan-hint" id="scanHint2">Point at the square code beside the seal line, lower-right.</p>
+          </section>
+
+          <div class="rule"><span>or type it</span></div>
+
           <form id="pageForm" autocomplete="off">
             <label class="field-label" for="pgDoc">Control number</label>
             <input id="pgDoc" type="text" spellcheck="false" placeholder="R1-2026-010734" />
@@ -107,10 +124,6 @@
       </footer>
     </div>
 
-    <script type="module">
-      import { frondSvgMarkup } from '/frond.js';
-      window.frondSvgMarkup = frondSvgMarkup;
-    </script>
     <script src="/vendor/html5-qrcode.min.js"></script>
     <script src="/app.js"></script>
   </body>
