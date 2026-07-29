@@ -212,19 +212,6 @@ async function startScan() {
 
   scanHint.textContent = 'Requesting camera…';
 
-  // Probe with the browser's own getUserMedia first: it returns a proper error
-  // (not html5-qrcode's opaque string) and primes the permission. `ideal` means
-  // desktop webcams without a rear camera still succeed with whatever they have.
-  try {
-    const probe = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false,
-    });
-    probe.getTracks().forEach((tr) => tr.stop());
-  } catch (e) {
-    return showCameraError(e);
-  }
-
   const qrbox = (vw, vh) => {
     const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
     return { width: m, height: m };
@@ -236,29 +223,36 @@ async function startScan() {
     verify(text);
   };
 
+  // Clear any half-initialised previous scanner so a retry doesn't collide.
+  if (scanner) {
+    try {
+      await scanner.clear();
+    } catch {
+      /* ignore */
+    }
+    scanner = null;
+  }
   scanner = new Html5Qrcode('reader', {
     verbose: false,
     experimentalFeatures: { useBarCodeDetectorIfSupported: true },
   });
 
   try {
-    // Permission is granted now, so getCameras() returns labelled device ids.
-    let cams = [];
-    try {
-      cams = await Html5Qrcode.getCameras();
-    } catch (e) {
-      cams = [];
-    }
-    const back =
-      cams.find((c) => /back|rear|environment/i.test(c.label || '')) || cams[cams.length - 1];
-    // Fall back to a facingMode constraint if enumeration returned nothing.
-    const source = back ? back.id : { facingMode: { ideal: 'environment' } };
-    await scanner.start(source, cfg, onScan, () => {});
+    // Single camera acquisition — `ideal` takes the rear camera when present and
+    // falls back to any camera on laptops, without a second open/close cycle
+    // (which is what triggers "camera in use" on Windows).
+    await scanner.start({ facingMode: { ideal: 'environment' } }, cfg, onScan, () => {});
     scanning = true;
     viewport.classList.add('live');
     scanToggle.textContent = 'Stop camera';
     scanHint.textContent = 'Fill the box with the QR and hold steady — get close, it’s small.';
   } catch (err) {
+    try {
+      await scanner.clear();
+    } catch {
+      /* ignore */
+    }
+    scanner = null;
     showCameraError(err);
   }
 }
