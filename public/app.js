@@ -238,10 +238,11 @@ async function startScan() {
   });
 
   try {
-    // Single camera acquisition — `ideal` takes the rear camera when present and
-    // falls back to any camera on laptops, without a second open/close cycle
-    // (which is what triggers "camera in use" on Windows).
-    await scanner.start({ facingMode: { ideal: 'environment' } }, cfg, onScan, () => {});
+    // Single camera acquisition. A bare `facingMode: 'environment'` string is what
+    // html5-qrcode accepts, and the browser treats it as a soft preference — so it
+    // takes the rear camera when present and falls back to any camera on laptops,
+    // without a second open/close cycle (which triggers "camera in use" on Windows).
+    await scanner.start({ facingMode: 'environment' }, cfg, onScan, () => {});
     scanning = true;
     viewport.classList.add('live');
     scanToggle.textContent = 'Stop camera';
