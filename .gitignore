@@ -16,3 +16,4 @@ certs/
 scripts/leafcode.svg
 scripts/leafcode-preview.png
 scripts/live-*.png
+scripts/*.log

@@ -27,7 +27,7 @@ async function drawDataMatrix(pdf, pg, payload) {
 const LEAF_SIZE = 110;
 const LEAF_ANGLE = -18; // tilted, so it reads as a leaf rather than a data block
 
-async function drawLeafCode(pdf, pg, bits, { size = LEAF_SIZE, margin = 26 } = {}) {
+async function drawLeafCode(pdf, pg, bits, { size = LEAF_SIZE, margin = 26, rasterPx = 1000 } = {}) {
   const [{ rasterize }, { rgbaToGrayPng }] = await Promise.all([
     import('./leafcode/raster.js'),
     import('./leafcode/png.js'),
@@ -35,7 +35,7 @@ async function drawLeafCode(pdf, pg, bits, { size = LEAF_SIZE, margin = 26 } = {
   // Rasterise with the SAME code path Gate A validates, then embed those exact
   // pixels. Drawing the lattice with PDF primitives instead would duplicate the
   // geometry a fourth time and risk drifting from what the decoder expects.
-  const png = rgbaToGrayPng(rasterize(bits, { px: 1000 }));
+  const png = rgbaToGrayPng(rasterize(bits, { px: rasterPx }));
   const img = await pdf.embedPng(png);
 
   // Centre of where the leaf should sit (lower-right, above the seal line).
@@ -147,7 +147,7 @@ const UPSERT_SQL = `
  */
 export async function sealPdf(
   db,
-  { iisNo, pdfBytes, keyProvider, sealedPdfPath = null, mark = 'datamatrix', leafSize = LEAF_SIZE }
+  { iisNo, pdfBytes, keyProvider, sealedPdfPath = null, mark = 'datamatrix', leafSize = LEAF_SIZE, leafRasterPx = 1000 }
 ) {
   const kid = keyProvider.currentKid();
   const secret = keyProvider.secretFor(kid);
@@ -180,6 +180,7 @@ export async function sealPdf(
       // the leaf left to sit beside it rather than on top of it.
       await drawLeafCode(src, pg, encode(payload), {
         size: leafSize,
+        rasterPx: leafRasterPx,
         margin: mark === 'both' ? 84 : 26,
       });
     }
