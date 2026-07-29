@@ -13,3 +13,5 @@ scripts/*.pdf
 scripts/s2-*.png
 
 certs/
+scripts/leafcode.svg
+scripts/leafcode-preview.png
