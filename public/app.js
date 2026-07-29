@@ -175,17 +175,26 @@ const scanToggle = document.getElementById('scanToggle');
 const scanHint = document.getElementById('scanHint');
 
 function showCameraError(e) {
+  // html5-qrcode sometimes rejects with a plain string, not a DOMException.
+  const text =
+    typeof e === 'string'
+      ? e
+      : (e && (e.name || e.message)) || (e && e.toString && e.toString()) || '';
   console.error('CerVer camera:', e);
-  const n = (e && e.name) || '';
+  const t = String(text).toLowerCase();
   let msg;
-  if (n === 'NotAllowedError' || n === 'SecurityError') {
+  if (/notallowed|permission|denied|dismiss/.test(t)) {
     msg = 'Camera permission is blocked. Tap the camera / lock icon in the address bar → Allow → reload.';
-  } else if (n === 'NotFoundError' || n === 'DevicesNotFoundError' || n === 'OverconstrainedError') {
-    msg = 'No usable camera found on this device. Use manual entry below.';
-  } else if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') {
+  } else if (/notfound|no camera|not found|devicesnotfound|requested device not/.test(t)) {
+    msg = 'No camera found on this device. Use manual entry below.';
+  } else if (/notreadable|in use|could not start|starting video|trackstart|abort/.test(t)) {
     msg = 'The camera is being used by another app. Close it, then try again.';
+  } else if (/secure|https|insecure/.test(t)) {
+    msg = 'The camera needs HTTPS — open the https://…:3443 address (accept the warning once).';
+  } else if (/not supported|unsupported|getusermedia/.test(t)) {
+    msg = 'This browser can’t open the camera in-page. Try Chrome, or use manual entry.';
   } else {
-    msg = 'Couldn’t open the camera (' + (n || (e && e.message) || 'unknown') + '). Use manual entry below.';
+    msg = 'Couldn’t open the camera: ' + (text || 'no detail') + '. Use manual entry below.';
   }
   scanHint.textContent = msg;
 }
@@ -201,7 +210,21 @@ async function startScan() {
     return;
   }
 
-  // Scan box tracks ~72% of the viewfinder so a small corner QR still lands inside.
+  scanHint.textContent = 'Requesting camera…';
+
+  // Probe with the browser's own getUserMedia first: it returns a proper error
+  // (not html5-qrcode's opaque string) and primes the permission. `ideal` means
+  // desktop webcams without a rear camera still succeed with whatever they have.
+  try {
+    const probe = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    });
+    probe.getTracks().forEach((tr) => tr.stop());
+  } catch (e) {
+    return showCameraError(e);
+  }
+
   const qrbox = (vw, vh) => {
     const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
     return { width: m, height: m };
@@ -218,23 +241,19 @@ async function startScan() {
     experimentalFeatures: { useBarCodeDetectorIfSupported: true },
   });
 
-  scanHint.textContent = 'Requesting camera…';
   try {
-    // getCameras() triggers the permission prompt and returns real device ids —
-    // more reliable than facingMode, which desktop webcams often reject.
+    // Permission is granted now, so getCameras() returns labelled device ids.
     let cams = [];
     try {
       cams = await Html5Qrcode.getCameras();
-    } catch (permErr) {
-      return showCameraError(permErr);
-    }
-    if (!cams || !cams.length) {
-      scanHint.textContent = 'No camera found on this device. Use manual entry below.';
-      return;
+    } catch (e) {
+      cams = [];
     }
     const back =
       cams.find((c) => /back|rear|environment/i.test(c.label || '')) || cams[cams.length - 1];
-    await scanner.start(back.id, cfg, onScan, () => {});
+    // Fall back to a facingMode constraint if enumeration returned nothing.
+    const source = back ? back.id : { facingMode: { ideal: 'environment' } };
+    await scanner.start(source, cfg, onScan, () => {});
     scanning = true;
     viewport.classList.add('live');
     scanToggle.textContent = 'Stop camera';
