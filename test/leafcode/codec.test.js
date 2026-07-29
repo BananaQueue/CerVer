@@ -46,3 +46,25 @@ test('bitsToPayload returns null for random noise bits', () => {
   for (let i = 0; i < 256; i++) bits[i] = (i * 73 + 5) % 2;
   assert.equal(bitsToPayload(bits), null);
 });
+
+// Regression: page is packed into a single byte (page & 0xff), but the
+// payload regex allowed \d{1,3} (0-999). Out-of-range pages must be
+// rejected at encode time, not silently truncated/wrapped into a
+// different, wrong page number.
+test('encode rejects page 256 (out of single-byte range)', () => {
+  assert.throws(() => encode('CVR|R1-2026-010734|256|TQQ3-MTBT'));
+});
+test('encode rejects page 500 (previously silently truncated to 244)', () => {
+  assert.throws(() => encode('CVR|R1-2026-010734|500|TQQ3-MTBT'));
+});
+test('encode rejects page 0 (not a meaningful page number)', () => {
+  assert.throws(() => encode('CVR|R1-2026-010734|0|TQQ3-MTBT'));
+});
+test('encode succeeds and round-trips for boundary page 1', () => {
+  const payload = 'CVR|R1-2026-010734|1|TQQ3-MTBT';
+  assert.equal(bitsToPayload(encode(payload)), payload);
+});
+test('encode succeeds and round-trips for boundary page 255', () => {
+  const payload = 'CVR|R1-2026-010734|255|TQQ3-MTBT';
+  assert.equal(bitsToPayload(encode(payload)), payload);
+});

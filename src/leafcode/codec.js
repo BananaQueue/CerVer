@@ -5,7 +5,7 @@
 // Payload format: CVR|R1-YYYY-NNNNNN|k|XXXX-XXXX
 //   YYYY   4-digit year (19xx or 20xx)
 //   NNNNNN 6-digit serial
-//   k      page number, 1-3 digits
+//   k      page number, 1-3 digits, valid range 1-255 (packed into 1 byte)
 //   XXXX-XXXX  8-character base32 seal (alphabet below), split 4-4
 //
 // Packed to 13 data bytes: [0x1e, 0x01] header, year (2B BE), serial (3B
@@ -25,6 +25,7 @@ function packPayload(payload) {
   const year = Number(m[1]);
   const serial = Number(m[2]);
   const page = Number(m[3]);
+  if (page < 1 || page > 255) throw new Error('bad payload: page out of range (1-255): ' + payload);
   const sealChars = (m[4] + m[5]).toUpperCase();
   let sealBits = 0n;
   for (const c of sealChars) sealBits = (sealBits << 5n) | BigInt(B32.indexOf(c)); // 40 bits
