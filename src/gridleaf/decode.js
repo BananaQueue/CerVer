@@ -1,4 +1,4 @@
-import { SPACE, gridCells, refPoints } from './mask.js';
+import { SPACE, gridCells, refPoints, disc } from './mask.js';
 import { COLS, bitsToPayload } from './codec.js';
 
 // GridLeaf decoder.
@@ -207,18 +207,35 @@ export function decode(img) {
     const refs = outlineRefs(outline);
     if (!refs) return null;
 
-    const canon = refPoints(COLS);
     const { cells } = gridCells(COLS);
+    const d = disc(COLS);
 
-    // Try both lateral assignments: the leaf is bilaterally symmetric, so which
-    // detected side is "left" in canonical space is ambiguous. The RS decode is
-    // the arbiter.
+    // A disc is rotationally symmetric, so it has no distinctive "tip": every
+    // boundary point is equidistant from the centre and an extremal-point fit is
+    // unstable (measured 31 px off). What a disc DOES give, robustly, is a
+    // centre, a radius and — via the tab — a rotation. That is a similarity
+    // transform, estimated from the two widest points (which are stable) rather
+    // than from four noisy corners.
+    const cxImg = (refs.left.x + refs.right.x) / 2;
+    const cyImg = (refs.left.y + refs.right.y) / 2;
+    const rImg = Math.hypot(refs.right.x - refs.left.x, refs.right.y - refs.left.y) / 2;
+    if (!(rImg > 4)) return null;
+    const scale = rImg / d.rOuter;
+    // Sample window sized to the cell, clamped so it never spills into neighbours.
+    const cellImg = (SPACE / COLS) * scale;
+    const sampleR = Math.max(1, Math.min(3, Math.round(cellImg * 0.25)));
+
+    // Canonical "toward the tab" is +y; match it to the measured tab direction.
+    const tabAng = Math.atan2(refs.stemEnd.y - cyImg, refs.stemEnd.x - cxImg);
     for (const flip of [false, true]) {
-      const map = solveHomography(
-        [canon.tip, canon.stemEnd, canon.left, canon.right],
-        [refs.tip, refs.stemEnd, flip ? refs.right : refs.left, flip ? refs.left : refs.right]
-      );
-      if (!map) continue;
+      const theta = tabAng - Math.PI / 2 + (flip ? Math.PI : 0);
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+      const map = (p) => {
+        const dx = (p.x - d.cx) * scale;
+        const dy = (p.y - d.cy) * scale;
+        return { x: cxImg + dx * cosT - dy * sinT, y: cyImg + dx * sinT + dy * cosT };
+      };
       const bits = new Uint8Array(cells.length);
       let ok = true;
       for (let i = 0; i < cells.length; i++) {
@@ -227,11 +244,15 @@ export function decode(img) {
         const x = Math.round(q.x);
         const y = Math.round(q.y);
         if (x < 0 || y < 0 || x >= w || y >= h) { bits[i] = 0; continue; }
-        // Sample a tiny 3x3 median-ish average at the cell centre.
+        // Average over a window scaled to the CELL, not a fixed 3x3. A fixed
+        // window aliases badly at some scales (measured: 400 px and 240 px
+        // decoded but 300 px did not) because the sampled pixels drift toward
+        // the cell boundary as the scale changes.
         let sum = 0;
         let cnt = 0;
-        for (let dy = -1; dy <= 1; dy++)
-          for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -sampleR; dy <= sampleR; dy++)
+          for (let dx = -sampleR; dx <= sampleR; dx++) {
+            if (dx * dx + dy * dy > sampleR * sampleR) continue;
             const nx = x + dx;
             const ny = y + dy;
             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;

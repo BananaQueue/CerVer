@@ -14,33 +14,42 @@
 //      edge instead of the real one, and the projective fit is garbage.
 
 export const SPACE = 1000;
-export const STEM_LEN = 190; // canonical units the stem extends past the base
+export const STEM_LEN = 120; // canonical units the tab extends past the disc
 
-const LH = 620; // leaf length
-const WMAX = 360; // leaf max half-width
+// Shape: the DENR/EMB seal's outer form — a DISC, not a leaf.
+//
+// This is a large functional win, not only a branding one. A disc fills ~79% of
+// its own bounding square where the leaf silhouette managed ~31%, so the same
+// payload needs far fewer cells across, which is what actually shrinks the mark.
+//
+// A disc has no orientation of its own, so a short solid TAB hangs below it —
+// the same trick the stem played, and the tab is what the decoder anchors on
+// (it is the farthest point of the mark from the centroid by construction).
+const R = 360; // disc radius
 const CX = SPACE / 2;
-// Leaf sits HIGH in the box so a long stem can hang below it. The stem costs
-// no grid cells (it is outside the leaf) but makes the tip unambiguously the
-// farthest point from the mark centroid, which is how orientation is found.
-const CY = 380;
+const CY = 440;
 
 /** Locator stroke width in canonical units — one cell, so it blurs like data. */
 export function strokeW(cols) {
   return SPACE / cols;
 }
 
-/** Leaf half-width at u (0 = base, 1 = tip). Broad body, rounded base, clear tip. */
+// Disc parametrised by u: u=0 is the bottom (where the tab attaches), u=1 the
+// top, u=0.5 the widest. Keeping the same (u, half-width) form as the earlier
+// leaf means the outline-offset, reference-point and sampling code all carry
+// over unchanged.
 export function hw(u) {
   if (u <= 0 || u >= 1) return 0;
-  return WMAX * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.62)), 0.78);
+  return R * Math.sin(Math.PI * u);
 }
 
 export function P(u, x) {
-  return { x: CX + x, y: CY + (0.5 - u) * LH };
+  return { x: CX + x, y: CY + R * Math.cos(Math.PI * u) };
 }
 
 export function uOf(y) {
-  return 0.5 - (y - CY) / LH;
+  const c = Math.min(1, Math.max(-1, (y - CY) / R));
+  return Math.acos(c) / Math.PI;
 }
 
 export function insideLeaf(x, y) {
@@ -120,4 +129,9 @@ export function extent(cols) {
     left: CX - bestW - sw,
     right: CX + bestW + sw,
   };
+}
+
+/** Disc centre and radius in canonical units (the decoder fits a similarity). */
+export function disc(cols) {
+  return { cx: CX, cy: CY, r: R, rOuter: R + strokeW(cols) };
 }
