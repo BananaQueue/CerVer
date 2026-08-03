@@ -1,4 +1,4 @@
-import { SPACE, gridCells, P, outlineHalfWidth, STEM_LEN } from './mask.js';
+import { SPACE, gridCells, P, outlineHalfWidth, STEM_LEN, dataCells, frondCells } from './mask.js';
 import { COLS } from './codec.js';
 import { strokeWidth } from './render.js';
 
@@ -6,7 +6,9 @@ import { strokeWidth } from './render.js';
 // decoder can be exercised headlessly (no browser, no camera).
 
 export function rasterize(bits, { px = 600, cols = COLS, stem = true } = {}) {
-  const { cell, cells } = gridCells(cols);
+  const { cell } = gridCells(cols);
+  const cells = dataCells(cols);
+  const motif = frondCells(cols);
   const s = px / SPACE;
   const data = new Uint8ClampedArray(px * px * 4).fill(255);
   const dark = (x, y) => {
@@ -22,10 +24,11 @@ export function rasterize(bits, { px = 600, cols = COLS, stem = true } = {}) {
       for (let x = Math.round(x0); x < Math.round(x0 + w); x++) dark(x, y);
   };
 
-  // data cells
+  // fixed motif, then data cells
+  const box = (cp) => rect(cp.c * cell * s, cp.r * cell * s, (cell + 0.6) * s, (cell + 0.6) * s);
+  motif.forEach(box);
   cells.forEach((cp, i) => {
-    if (bits[i] !== 1) return;
-    rect(cp.c * cell * s, cp.r * cell * s, (cell + 0.6) * s, (cell + 0.6) * s);
+    if (bits[i] === 1) box(cp);
   });
 
   // Locator: a stroke one cell wide whose centre-line is offset OUTWARD by half

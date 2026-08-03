@@ -135,3 +135,86 @@ export function extent(cols) {
 export function disc(cols) {
   return { cx: CX, cy: CY, r: R, rOuter: R + strokeW(cols) };
 }
+
+// ---------------------------------------------------------------------------
+// DENR/EMB seal motif.
+//
+// The seal is not just a disc: it carries a frond (a vertical midrib with
+// diagonal veins) over stepped horizontal bands. Those features are reproduced
+// here as FIXED cells rather than decoration, which earns three things at once:
+// the mark reads as the institutional seal, the frond's asymmetry gives the
+// decoder an orientation reference far stronger than a tab, and the banding
+// gives the lower half the seal's rhythm.
+//
+// Fixed cells carry no payload, so they cost capacity — the grid is sized to
+// leave enough data cells over.
+
+const FROND_TOP = 0.10; // fraction of the disc height where the frond starts
+const FROND_BOT = 0.52; // ...and ends (the bands take over below)
+
+function segDist(px, py, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  const L = vx * vx + vy * vy;
+  let t = L ? (wx * vx + wy * vy) / L : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+}
+
+/** Is this canonical point part of the frond motif (midrib + veins)? */
+export function inFrond(x, y, cols) {
+  const t = strokeW(cols) * 0.55; // motif line thickness
+  const top = CY - R + 2 * R * FROND_TOP;
+  const bot = CY - R + 2 * R * FROND_BOT;
+  // midrib
+  if (segDist(x, y, CX, top, CX, bot) <= t) return true;
+  // veins: pairs branching up-and-out from the midrib
+  const N = 5;
+  for (let i = 0; i < N; i++) {
+    const yy = top + ((i + 0.7) / N) * (bot - top);
+    const len = 0.30 * R * (1 - 0.10 * i);
+    for (const s of [-1, 1]) {
+      if (segDist(x, y, CX, yy, CX + s * len, yy - len * 0.75) <= t) return true;
+    }
+  }
+  return false;
+}
+
+/** Stepped white gaps that give the lower half the seal's banding. */
+export function inBandGap(x, y, cols) {
+  const bandTop = CY - R + 2 * R * FROND_BOT;
+  if (y < bandTop) return false;
+  const cell = SPACE / cols;
+  const step = cell * (x > CX ? 1 : 0); // the seal's bands are stepped, not straight
+  const rel = y - bandTop + step;
+  const period = cell * 3;
+  return rel % period < cell * 0.9;
+}
+
+/**
+ * Cells that carry payload.
+ *
+ * Excluded: the motif itself, the band gaps, and a one-cell KEEP-OUT margin
+ * around the motif. Without that margin the frond is surrounded by random data
+ * cells and simply disappears into the noise — a fixed motif is only legible if
+ * it has clear space around it.
+ */
+export function dataCells(cols) {
+  const cell = SPACE / cols;
+  const keepOut = (c) => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (inFrond(c.x + dx * cell, c.y + dy * cell, cols)) return true;
+      }
+    }
+    return false;
+  };
+  return gridCells(cols).cells.filter((c) => !keepOut(c) && !inBandGap(c.x, c.y, cols));
+}
+
+/** Cells drawn dark as fixed motif (frond). */
+export function frondCells(cols) {
+  return gridCells(cols).cells.filter((c) => inFrond(c.x, c.y, cols));
+}

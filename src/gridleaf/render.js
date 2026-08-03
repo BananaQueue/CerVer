@@ -1,4 +1,4 @@
-import { SPACE, gridCells, hw, P, strokeW as maskStrokeW, outlineHalfWidth, STEM_LEN } from './mask.js';
+import { SPACE, gridCells, hw, P, strokeW as maskStrokeW, outlineHalfWidth, STEM_LEN, dataCells, frondCells } from './mask.js';
 import { COLS } from './codec.js';
 
 // Draw a GridLeaf. Cells tile edge-to-edge; the leaf outline is the locator and
@@ -29,17 +29,25 @@ export function strokeWidth(cols = COLS) {
  * @returns {string} standalone SVG
  */
 export function renderSvg(bits, { px = 600, cols = COLS, stem = true } = {}) {
-  const { cell, cells } = gridCells(cols);
+  const { cell } = gridCells(cols);
+  const cells = dataCells(cols);
+  const motif = frondCells(cols);
   const s = px / SPACE;
   let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${px} ${px}" width="${px}" height="${px}">`;
   out += `<rect width="${px}" height="${px}" fill="#fff"/>`;
   // Cells: +0.5 canonical overlap so neighbours abut with no hairline seam.
-  cells.forEach((cellPos, i) => {
-    if (bits[i] !== 1) return;
-    const x = cellPos.c * cell * s;
-    const y = cellPos.r * cell * s;
-    const w = (cell + 0.6) * s;
-    out += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${w.toFixed(2)}" fill="#000"/>`;
+  const box = (cp) => {
+    const x = (cp.c * cell * s).toFixed(2);
+    const y = (cp.r * cell * s).toFixed(2);
+    const w = ((cell + 0.6) * s).toFixed(2);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${w}" fill="#000"/>`;
+  };
+  // Fixed motif first (frond), then the payload cells.
+  motif.forEach((cp) => {
+    out += box(cp);
+  });
+  cells.forEach((cp, i) => {
+    if (bits[i] === 1) out += box(cp);
   });
   out += `<path d="${outlinePath(cols)}" fill="none" stroke="#000" stroke-width="${(strokeWidth(cols) * s).toFixed(2)}" stroke-linejoin="round" transform="scale(${s})"/>`;
   if (stem) {

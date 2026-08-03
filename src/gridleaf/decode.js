@@ -1,4 +1,4 @@
-import { SPACE, gridCells, refPoints, disc } from './mask.js';
+import { SPACE, gridCells, refPoints, disc, dataCells } from './mask.js';
 import { COLS, bitsToPayload } from './codec.js';
 
 // GridLeaf decoder.
@@ -207,7 +207,7 @@ export function decode(img) {
     const refs = outlineRefs(outline);
     if (!refs) return null;
 
-    const { cells } = gridCells(COLS);
+    const cells = dataCells(COLS);
     const d = disc(COLS);
 
     // A disc is rotationally symmetric, so it has no distinctive "tip": every

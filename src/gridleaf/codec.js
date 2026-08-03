@@ -1,9 +1,10 @@
 import { rsEncode, rsDecode } from '../leafcode/rs.js';
-import { gridCells } from './mask.js';
+import { dataCells } from './mask.js';
 
 // GridLeaf payload codec — a trimmed version of the LeafCode packing.
 //
-// Budget: a 22x22 grid over the disc yields 196 usable cells, so 23 bytes
+// Budget: a 28x28 grid over the disc leaves 230 DATA cells after the frond and
+// band motif claim their fixed cells, so 23 bytes
 // (184 bits) fit. Spent as 11 data + 12 parity, correcting up to 6 corrupted
 // bytes of 23 (~26% redundancy).
 //
@@ -16,7 +17,7 @@ import { gridCells } from './mask.js';
 //                      truncated; weakening the cryptographic seal to save one
 //                      byte is a bad trade in a verification system)
 
-export const COLS = 22;
+export const COLS = 28;
 export const DATA_BYTES = 11;
 export const NSYM = 12;
 export const CODE_BYTES = DATA_BYTES + NSYM; // 23
@@ -27,7 +28,7 @@ const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const RE = /^CVR\|R1-((?:20|21)\d\d)-(\d{6})\|(\d{1,3})\|([A-Z2-7]{4})-([A-Z2-7]{4})$/;
 
 export function usableCells() {
-  return gridCells(COLS).cells.length;
+  return dataCells(COLS).length;
 }
 
 function pack(payload) {
