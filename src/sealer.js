@@ -17,6 +17,37 @@ async function drawDataMatrix(pdf, pg, payload) {
   pg.drawImage(img, { x, y, width: size, height: size });
 }
 
+// The EMB seal code: the DENR/EMB logo pixelated to a 44x44 tile grid, with the
+// payload carried by clearing interior tiles. Drawn as vector rectangles rather
+// than an embedded raster so it stays crisp at any print resolution.
+//
+// 22 mm is the chosen size: at 44 tiles that is a 0.5 mm tile, comfortably above
+// the 0.34 mm modules the Data Matrix already scans at on these pages, and the
+// smallest size at which the seal still reads as the seal.
+const SEALCODE_MM = 22;
+
+async function drawSealCode(pg, payload, { mm = SEALCODE_MM, margin = 26 } = {}) {
+  const { tilesFor, SIZE } = await import('./sealcode/encode.js');
+  const tiles = tilesFor(payload);
+  const size = (mm / 25.4) * 72; // mm -> points
+  const t = size / SIZE;
+  const x0 = pg.getWidth() - margin - size;
+  const y0 = 34;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (!tiles[r][c]) continue;
+      pg.drawRectangle({
+        x: x0 + c * t,
+        // PDF y grows upward; tile row 0 is the top of the mark.
+        y: y0 + (SIZE - 1 - r) * t,
+        width: t + 0.12, // hairline overlap so neighbours abut cleanly
+        height: t + 0.12,
+        color: rgb(0.05, 0.05, 0.05),
+      });
+    }
+  }
+}
+
 // EXPERIMENTAL: stamp a LeafCode in the lower-right, tilted, with a stem.
 //
 // It needs far more page area than the Data Matrix: 256 nodes at 24 canonical
@@ -174,15 +205,18 @@ export async function sealPdf(
     if (mark === 'datamatrix' || mark === 'both') {
       await drawDataMatrix(src, pg, payload);
     }
-    if (mark === 'leafcode' || mark === 'both') {
+    if (mark === 'leafcode') {
       const { encode } = await import('./leafcode/codec.js');
-      // When both marks are present the Data Matrix keeps the corner, so shift
-      // the leaf left to sit beside it rather than on top of it.
       await drawLeafCode(src, pg, encode(payload), {
         size: leafSize,
         rasterPx: leafRasterPx,
-        margin: mark === 'both' ? 84 : 26,
+        margin: 26,
       });
+    }
+    if (mark === 'sealcode' || mark === 'both') {
+      // With both marks the Data Matrix keeps the corner, so the seal shifts
+      // left to sit beside it rather than on top of it.
+      await drawSealCode(pg, payload, { margin: mark === 'both' ? 84 : 26 });
     }
     // Human-readable seal line under the Data Matrix, right-aligned to the margin.
     const size = 6;

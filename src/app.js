@@ -68,7 +68,7 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
 
     const pdfBytes = await data.toBuffer();
     const requested = (data.fields?.mark?.value || 'datamatrix').trim();
-    const mark = ['datamatrix', 'leafcode', 'both'].includes(requested) ? requested : 'datamatrix';
+    const mark = ['datamatrix', 'sealcode', 'leafcode', 'both'].includes(requested) ? requested : 'datamatrix';
     const { sealPdf } = await import('./sealer.js');
     await fs.mkdir(sealDir, { recursive: true });
     const sealedPath = path.join(sealDir, `${safeName(iisNo)}.pdf`);

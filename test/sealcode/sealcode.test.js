@@ -100,3 +100,35 @@ test('renderSvg produces a drawable mark', () => {
   assert.match(svg, /^<svg/);
   assert.ok((svg.match(/<rect/g) || []).length > 300);
 });
+
+test('decodes through real browser rasterisation, not just the pixel double', async () => {
+  // The pure-JS rasterizer makes hard black/white edges. Real rendering
+  // antialiases and lands tile edges on fractional pixels, so the SVG is
+  // rasterised in Chrome and decoded from those pixels — the path an actual
+  // scan takes.
+  const { chromium } = await import('playwright');
+  const b = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    const pg = await b.newPage();
+    const svg = renderSvg(P1, { px: 1000 });
+    const fails = [];
+    for (const px of [140, 200, 280, 420]) {
+      const out = await pg.evaluate(async ({ svg, px }) => {
+        const url = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+        const im = new Image(); im.src = url; await im.decode();
+        const pad = Math.round(px * 0.12), W = px + pad * 2;
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = W;
+        const cx = cv.getContext('2d', { willReadFrequently: true });
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, W);
+        cx.drawImage(im, pad, pad, px, px);
+        const d = cx.getImageData(0, 0, W, W);
+        return { width: d.width, height: d.height, data: Array.from(d.data) };
+      }, { svg, px });
+      const got = decode({ width: out.width, height: out.height, data: new Uint8ClampedArray(out.data) });
+      if (got !== P1) fails.push(px);
+    }
+    assert.deepEqual(fails, [], `browser-rasterised decode failed at ${fails.join(', ')} px`);
+  } finally {
+    await b.close();
+  }
+});
