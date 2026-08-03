@@ -1,5 +1,5 @@
 import { N, GRID, CARRIERS, FIXED, INK_BBOX } from './baseline.js';
-import { bitsToPayload } from '../gridleaf/codec.js';
+import { bitsToPayload } from './payload.js';
 
 // EMB seal code — decoder.
 //

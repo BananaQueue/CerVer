@@ -1,23 +1,20 @@
-import { rsEncode, rsDecode } from '../leafcode/rs.js';
-import { dataCells } from './mask.js';
+import { rsEncode, rsDecode } from './rs.js';
 
-// GridLeaf payload codec — a trimmed version of the LeafCode packing.
+// Payload codec for the EMB seal code.
 //
-// Budget: a 28x28 grid over the disc leaves 230 DATA cells after the frond and
-// band motif claim their fixed cells, so 23 bytes
-// (184 bits) fit. Spent as 11 data + 12 parity, correcting up to 6 corrupted
-// bytes of 23 (~26% redundancy).
+// Packs a page seal into 11 bytes, Reed-Solomon protects it to 23 bytes, and
+// expands that to the 184 bits the mark carries.
 //
-// Trimming vs the original 13-byte packing:
-//   header  2B -> 1B  (magic and version packed into one byte)
-//   year    2B -> 1B  (offset from 2000, so 2000..2255)
-//   serial  3B        (unchanged, up to 16.7M)
-//   page    1B        (unchanged, 1..255)
-//   seal    5B        (unchanged — the full 40-bit seal is deliberately NOT
-//                      truncated; weakening the cryptographic seal to save one
-//                      byte is a bad trade in a verification system)
+//   header  1B  magic + version
+//   year    1B  offset from 2000, so 2000..2255
+//   serial  3B  up to 16.7M
+//   page    1B  1..255
+//   seal    5B  the full 40-bit seal, deliberately NOT truncated — weakening
+//               the cryptographic seal to save a byte is a bad trade in a
+//               verification system
+//
+// 11 data + 12 parity corrects up to 6 corrupted bytes of 23 (~26% redundancy).
 
-export const COLS = 28;
 export const DATA_BYTES = 11;
 export const NSYM = 12;
 export const CODE_BYTES = DATA_BYTES + NSYM; // 23
@@ -26,10 +23,6 @@ export const TOTAL_BITS = CODE_BYTES * 8; // 184
 const MAGIC = 0x1f;
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 const RE = /^CVR\|R1-((?:20|21)\d\d)-(\d{6})\|(\d{1,3})\|([A-Z2-7]{4})-([A-Z2-7]{4})$/;
-
-export function usableCells() {
-  return dataCells(COLS).length;
-}
 
 function pack(payload) {
   const m = String(payload || '').match(RE);

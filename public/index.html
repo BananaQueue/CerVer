@@ -64,21 +64,21 @@
         <section id="mode-page" class="mode-panel" hidden>
           <div class="intro">
             <h1>Verify one page.</h1>
-            <p class="lede">Scan the small square code in the page’s lower-right corner, or type the seal.</p>
+            <p class="lede">Scan the EMB seal in the page’s lower-right corner, or type the seal code.</p>
           </div>
 
           <section class="scan" aria-label="Scan seal code">
             <div class="viewport" id="viewport2">
               <span class="reg tl"></span><span class="reg tr"></span>
               <span class="reg bl"></span><span class="reg br"></span>
-              <div id="reader2"></div>
+              <video id="pageVideo" playsinline muted></video>
               <div class="viewport-idle" id="viewportIdle2">
                 <span class="scan-glyph" aria-hidden="true">▣</span>
-                <p>Scan the seal code</p>
+                <p>Scan the EMB seal</p>
               </div>
             </div>
             <button class="btn btn-primary" id="scanToggle2" type="button">Scan seal code</button>
-            <p class="scan-hint" id="scanHint2">Point at the square code beside the seal line, lower-right.</p>
+            <p class="scan-hint" id="scanHint2">Point at the seal in the page’s lower-right corner.</p>
           </section>
 
           <div class="rule"><span>or type it</span></div>
@@ -93,7 +93,7 @@
               </div>
               <div>
                 <label class="field-label" for="pgSeal">Seal code</label>
-                <input id="pgSeal" type="text" spellcheck="false" placeholder="7F2A-9C41" />
+                <input id="pgSeal" type="text" spellcheck="false" placeholder="TQQ3-MTBT" />
               </div>
             </div>
             <p class="pg-tip">Reading the three bits printed lower-right. You can also paste the whole footer line into Control number.</p>
@@ -119,12 +119,12 @@
       </main>
 
       <footer class="colophon">
-        <p><a href="/seal.html">Staff · seal a document →</a> &nbsp;·&nbsp; <a href="/leafcode.html">LeafCode (experimental) →</a></p>
+        <p><a href="/seal.html">Staff · seal a document →</a></p>
         <p>A “needs staff check” or “not sealed” result means a document isn’t in the registry yet — not that it’s fake.</p>
       </footer>
     </div>
 
     <script src="/vendor/html5-qrcode.min.js"></script>
-    <script src="/app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

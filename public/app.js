@@ -278,17 +278,157 @@ const docScanner = createScanner({
   },
 });
 
-const pageScanner = createScanner({
-  readerId: 'reader2',
-  viewportId: 'viewport2',
-  toggleId: 'scanToggle2',
-  hintId: 'scanHint2',
-  formats: ['DATA_MATRIX', 'QR_CODE'],
-  idleHint: 'Point at the square code beside the seal line, lower-right.',
-  liveHint: 'Hold steady over the square code.',
-  startText: 'Scan seal code',
-  onDecode: (text) => handlePagePayload(text),
-});
+// ---- One-page scanner: reads the EMB seal code AND the Data Matrix ----
+//
+// This one runs its own capture loop rather than using html5-qrcode, because
+// each frame has to be offered to two decoders:
+//   1. our seal-code decoder, imported from /sealcode/ — the exact module the
+//      test suite exercises, so there is no second implementation to drift
+//   2. the Data Matrix — the browser's native BarcodeDetector where it exists,
+//      otherwise html5-qrcode's file decoder, which is slow enough that it only
+//      gets a frame twice a second
+// Whichever reads first wins.
+const pageScanner = (() => {
+  const viewport = document.getElementById('viewport2');
+  const toggle = document.getElementById('scanToggle2');
+  const hint = document.getElementById('scanHint2');
+  const video = document.getElementById('pageVideo');
+  let stream = null;
+  let raf = null;
+  let sealDecode = null;
+  let detector = null;
+  let scanDm = null;
+
+  async function ensureDecoders() {
+    if (!sealDecode) {
+      try {
+        ({ decode: sealDecode } = await import('/sealcode/decode.js'));
+      } catch (e) {
+        console.error('seal-code decoder failed to load', e);
+      }
+    }
+    if (!detector && 'BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({ formats: ['data_matrix', 'qr_code'] });
+      } catch {
+        detector = null;
+      }
+    }
+    if (!detector && !scanDm && window.Html5Qrcode) {
+      let host = document.getElementById('dmHost');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'dmHost';
+        host.hidden = true;
+        document.body.appendChild(host);
+      }
+      try {
+        const q = new Html5Qrcode('dmHost', {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.DATA_MATRIX,
+            Html5QrcodeSupportedFormats.QR_CODE,
+          ],
+          verbose: false,
+        });
+        scanDm = async (canvas) => {
+          const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+          if (!blob) return null;
+          try {
+            return await q.scanFile(new File([blob], 'frame.png', { type: 'image/png' }), false);
+          } catch {
+            return null; // nothing in this frame
+          }
+        };
+      } catch {
+        scanDm = null;
+      }
+    }
+  }
+
+  async function start() {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      hint.textContent =
+        'The camera needs a secure page. On a phone open the https://…:3443 address; on this PC use http://localhost.';
+      return;
+    }
+    await ensureDecoders();
+    hint.textContent = 'Requesting camera…';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
+      viewport.classList.add('live');
+      toggle.textContent = 'Stop camera';
+      hint.textContent = 'Fill the frame with the seal and hold steady.';
+      loop();
+    } catch (err) {
+      showCameraError(hint, err);
+      stop();
+    }
+  }
+
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+    viewport.classList.remove('live');
+    toggle.textContent = 'Scan seal code';
+    hint.textContent = 'Point at the seal in the page’s lower-right corner.';
+  }
+
+  function loop() {
+    const cv = document.createElement('canvas');
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    let busy = false;
+    let lastDm = 0;
+    const tick = async () => {
+      if (!stream) return;
+      if (!busy && video.videoWidth) {
+        busy = true;
+        try {
+          // Centre square crop, so the seal fills as much of the frame as possible.
+          const side = Math.min(video.videoWidth, video.videoHeight);
+          const px = Math.min(700, side);
+          cv.width = px;
+          cv.height = px;
+          cx.fillStyle = '#fff';
+          cx.fillRect(0, 0, px, px);
+          cx.drawImage(
+            video,
+            (video.videoWidth - side) / 2, (video.videoHeight - side) / 2, side, side,
+            0, 0, px, px
+          );
+
+          if (sealDecode) {
+            const got = sealDecode(cx.getImageData(0, 0, px, px));
+            if (got) { stop(); handlePagePayload(got); return; }
+          }
+          if (detector) {
+            const found = await detector.detect(cv);
+            if (found && found.length) { stop(); handlePagePayload(found[0].rawValue); return; }
+          } else if (scanDm && Date.now() - lastDm > 500) {
+            lastDm = Date.now();
+            const text = await scanDm(cv);
+            if (text) { stop(); handlePagePayload(text); return; }
+          }
+        } catch {
+          /* keep scanning */
+        }
+        busy = false;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  toggle.addEventListener('click', () => (stream ? stop() : start()));
+  return { start, stop, isActive: () => !!stream };
+})();
 
 // ---- Mode switching ----
 const PAGE_STATES = {

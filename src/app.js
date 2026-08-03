@@ -10,7 +10,7 @@ import { createPageVerifier } from './pageVerifier.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(srcDir, '..', 'public');
-const leafcodeDir = path.join(srcDir, 'leafcode');
+const sealcodeDir = path.join(srcDir, 'sealcode');
 
 function safeName(s) {
   return String(s).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -68,7 +68,7 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
 
     const pdfBytes = await data.toBuffer();
     const requested = (data.fields?.mark?.value || 'datamatrix').trim();
-    const mark = ['datamatrix', 'sealcode', 'leafcode', 'both'].includes(requested) ? requested : 'datamatrix';
+    const mark = ['datamatrix', 'sealcode', 'both'].includes(requested) ? requested : 'datamatrix';
     const { sealPdf } = await import('./sealer.js');
     await fs.mkdir(sealDir, { recursive: true });
     const sealedPath = path.join(sealDir, `${safeName(iisNo)}.pdf`);
@@ -114,24 +114,21 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     return reply.send(Buffer.from(single));
   });
 
-  // LeafCode (experimental): serve the modules as ESM so the browser can render
-  // and decode a LeafCode client-side. Read-only static JS; not part of the
-  // production verification path.
+  // Serve the seal-code modules as ESM so the browser can decode a mark from
+  // the camera with exactly the code the tests exercise — no second
+  // implementation to drift.
   app.register(fastifyStatic, {
-    root: leafcodeDir,
-    prefix: '/leafcode/',
+    root: sealcodeDir,
+    prefix: '/sealcode/',
     decorateReply: false,
   });
 
-  // Server-rendered LeafCode SVG for a payload.
-  app.get('/api/leafcode.svg', async (req, reply) => {
+  // Server-rendered seal code for a payload (handy for previews and printing).
+  app.get('/api/sealcode.svg', async (req, reply) => {
     const payload = String(req.query.payload || '').trim();
     try {
-      const [{ encode }, { renderSvg }] = await Promise.all([
-        import('./leafcode/codec.js'),
-        import('./leafcode/render.js'),
-      ]);
-      const svg = renderSvg(encode(payload), { px: Number(req.query.px) || 1000 });
+      const { renderSvg } = await import('./sealcode/encode.js');
+      const svg = renderSvg(payload, { px: Number(req.query.px) || 512 });
       reply.header('Content-Type', 'image/svg+xml; charset=utf-8');
       return reply.send(svg);
     } catch (e) {

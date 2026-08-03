@@ -1,5 +1,5 @@
 import { N, GRID, CARRIERS } from './baseline.js';
-import { encode as payloadToBits, bitsToPayload } from '../gridleaf/codec.js';
+import { encode as payloadToBits, bitsToPayload } from './payload.js';
 
 // EMB seal code — encoder.
 //
