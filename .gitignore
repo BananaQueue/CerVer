@@ -33,3 +33,4 @@ scripts/sc.*
 frames/
 public/vendor/pdfjs/
 scripts/reference-view.png
+scripts/SO_*-sealed.pdf

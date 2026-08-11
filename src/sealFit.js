@@ -1,4 +1,4 @@
-import { sealRect } from './sealer.js';
+import { sealBlock } from './sealer.js';
 
 // Does the seal land on top of something?
 //
@@ -18,6 +18,10 @@ import { sealRect } from './sealer.js';
 // signature; deciding which matters is left to the person sealing.
 
 const EPS = 0.01; // ignore hairline touches at the very edge
+
+// A stand-in footer for measuring the block before the real seal exists. Same
+// shape as the printed line, so the width is right to within a character.
+export const SAMPLE_FOOTER = 'EMB · R1-2026-000000 · p1/1 · K1 · AAAA-AAAA';
 
 /** Do two rectangles share any area? */
 function overlaps(a, b) {
@@ -49,8 +53,8 @@ function unitSquareBox(m) {
   return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
 }
 
-/** Text items that intersect the seal, from pdf.js text positions. */
-function textHits(textContent, seal) {
+/** Every drawn text item on the page, boxed, from pdf.js text positions. */
+function textBoxes(textContent) {
   const hits = [];
   for (const it of textContent.items) {
     if (!it.str || !it.str.trim()) continue;
@@ -59,19 +63,19 @@ function textHits(textContent, seal) {
     // size, and the origin sits on the BASELINE, so the box runs a little below.
     const h = it.height || Math.abs(it.transform[3]) || 0;
     const box = { x0: x, x1: x + (it.width || 0), y0: y - h * 0.25, y1: y + h * 0.85 };
-    if (overlaps(box, seal)) hits.push({ kind: 'text', text: it.str.trim(), box });
+    hits.push({ kind: 'text', text: it.str.trim(), box });
   }
   return hits;
 }
 
 /**
- * Images and drawn graphics that intersect the seal.
+ * Every image and drawn path on the page, boxed.
  *
  * Walks the page's operator list carrying the current transformation matrix, so
  * a placed image or a stroked path is measured where it actually lands rather
  * than in its own coordinates.
  */
-async function graphicsHits(pdfjs, page, seal) {
+async function graphicBoxes(pdfjs, page) {
   const { OPS } = pdfjs;
   const list = await page.getOperatorList();
   const hits = [];
@@ -87,12 +91,18 @@ async function graphicsHits(pdfjs, page, seal) {
     else if (fn === OPS.transform) ctm = mul(ctm, args);
     else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject ||
              fn === OPS.paintImageMaskXObject) {
-      const box = unitSquareBox(ctm);
-      if (overlaps(box, seal)) hits.push({ kind: 'image', box });
+      hits.push({ kind: 'image', box: unitSquareBox(ctm) });
     } else if (fn === OPS.constructPath) {
-      // args = [ops, coords, minMax]. pdf.js has already reduced the path to a
-      // bounding box in minMax = [minX, minY, maxX, maxY]; the coords entry is an
-      // array of typed arrays, one per subpath, so it is not a flat list.
+      // args = [paintOp, coords, minMax]. The first entry says what happens to
+      // the path once built. `endPath` means it is thrown away — it was only
+      // there to set a clipping region, and clipping draws nothing. A real EMB
+      // order carries 230 such full-page paths, every one of which "overlapped"
+      // the seal and buried the one finding that mattered.
+      if (args[0] === OPS.endPath) continue;
+
+      // pdf.js has already reduced the path to a bounding box in
+      // minMax = [minX, minY, maxX, maxY]; the coords entry is an array of typed
+      // arrays, one per subpath, so it is not a flat list.
       const mm = args[2];
       let box = null;
       if (mm && mm.length >= 4) {
@@ -126,21 +136,15 @@ async function graphicsHits(pdfjs, page, seal) {
         // the same way, so they are told apart by how thin they are — otherwise
         // every document with a footer rule reports a problem and the warning
         // stops meaning anything.
-        if (overlaps(box, seal)) {
-          hits.push({ kind: 'graphic', box, rule: thickness < 2 });
-        }
+        hits.push({ kind: 'graphic', box, rule: thickness < 2 });
       }
     }
   }
   return hits;
 }
 
-/**
- * Check every page of a PDF for content under the seal.
- *
- * @returns {Promise<{ clear: boolean, seal: object, pages: Array }>}
- */
-export async function checkSealFit(bytes, { mm } = {}) {
+/** Everything drawn on every page, boxed once so many rectangles can be tested. */
+async function collect(bytes) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const data = Uint8Array.from(bytes); // copy — pdfjs may detach the buffer
   // The standard fonts are not embedded in these PDFs; without them pdf.js warns
@@ -156,16 +160,33 @@ export async function checkSealFit(bytes, { mm } = {}) {
     standardFontDataUrl,
   }).promise;
 
-  const pages = [];
+  const out = [];
   for (let k = 1; k <= pdf.numPages; k++) {
     const page = await pdf.getPage(k);
     const [, , width, height] = page.view; // [x0, y0, x1, y1] in points
-    const seal = sealRect(width, mm ? { mm } : undefined);
+    out.push({
+      k,
+      width,
+      height,
+      boxes: [...textBoxes(await page.getTextContent()), ...(await graphicBoxes(pdfjs, page))],
+    });
+  }
+  await pdf.cleanup();
+  return out;
+}
 
-    const hits = [
-      ...textHits(await page.getTextContent(), seal),
-      ...(await graphicsHits(pdfjs, page, seal)),
-    ];
+/**
+ * Check every page of a PDF for content under the seal.
+ *
+ * @returns {Promise<{ clear: boolean, seal: object, pages: Array }>}
+ */
+export async function checkSealFit(bytes, { mm, footer = SAMPLE_FOOTER, at } = {}) {
+  const collected = await collect(bytes);
+
+  const pages = [];
+  for (const { k, width, height, boxes } of collected) {
+    const seal = sealBlock(width, { ...(mm ? { mm } : {}), footer, at }).block;
+    const hits = boxes.filter((b) => overlaps(b.box, seal));
 
     // Content the seal would obscure, as against decoration it would merely
     // cross. Only the first is worth stopping for.
@@ -185,14 +206,90 @@ export async function checkSealFit(bytes, { mm } = {}) {
       rules: rules.length,
     });
   }
-  await pdf.cleanup();
 
   const first = pages[0];
   return {
     clear: pages.every((p) => p.clear),
     // Pages where the seal only crosses a rule — worth mentioning, not stopping.
     ruled: pages.filter((p) => p.clear && p.rules > 0).map((p) => p.k),
-    seal: first ? sealRect(first.width, mm ? { mm } : undefined) : null,
+    seal: first ? sealBlock(first.width, { ...(mm ? { mm } : {}), footer, at }).block : null,
     pages,
+  };
+}
+
+/**
+ * Find somewhere the seal fits on EVERY page without covering anything.
+ *
+ * The default corner is not always available: a real EMB Special Order carries
+ * its own QR exactly there, and the whole footer band is taken by the ISO mark,
+ * the address block and that QR. Rather than make someone measure a new spot by
+ * hand for each layout, the page is searched.
+ *
+ * The search keeps the conventional placement wherever it can: candidates are
+ * ranked by distance from the usual bottom-right corner, so the seal moves as
+ * little as the page allows and staff still know where to look.
+ *
+ * @returns {Promise<{ found: boolean, spot: object|null, tried: number }>}
+ */
+export async function findClearSpot(
+  bytes,
+  { mm, footer = SAMPLE_FOOTER, step = 6, edge = 20, quiet = 12 } = {}
+) {
+  const collected = await collect(bytes);
+  if (!collected.length) return { found: false, spot: null, tried: 0 };
+
+  const { width, height } = collected[0];
+  const homeBlock = sealBlock(width, { ...(mm ? { mm } : {}), footer });
+  const home = homeBlock.block;
+  const w = home.x1 - home.x0;
+  const h = home.y1 - home.y0;
+  // Offsets of the mark within the block, so a candidate position can be turned
+  // back into the two rectangles that have different requirements.
+  const markDx = homeBlock.mark.x0 - home.x0;
+  const markDy = homeBlock.mark.y0 - home.y0;
+  const markW = homeBlock.mark.x1 - homeBlock.mark.x0;
+  const markH = homeBlock.mark.y1 - homeBlock.mark.y0;
+  const footDy = homeBlock.footer.y1 - home.y0;
+
+  // Only content blocks a position; a hairline rule may be crossed, exactly as
+  // in the check itself.
+  const blocking = collected.map((p) => p.boxes.filter((b) => b.kind !== 'graphic' || !b.rule));
+
+  let best = null;
+  let tried = 0;
+  for (let y0 = edge; y0 + h <= height - edge; y0 += step) {
+    for (let x0 = edge; x0 + w <= width - edge; x0 += step) {
+      const rect = { x0, y0, x1: x0 + w, y1: y0 + h };
+      // The mark and the line beneath it need different things.
+      //
+      // The mark must not merely avoid overlapping — it needs room. The first
+      // spot this found on a real EMB order sat 2 pt from the document's own QR
+      // and just under a line of text. Nothing overlapped, and it was still
+      // useless: the decoder treats dark shapes near the mark as part of it, so
+      // the neighbours were dragged into its bounding box and the scale came out
+      // wrong. A machine-readable mark needs a quiet zone, like any barcode.
+      //
+      // The line is only text. It has to sit on blank paper, but nothing is
+      // reading it optically, so it needs no margin — and demanding one for the
+      // whole 158 pt block left a full A4 order with nowhere to put the seal.
+      const room = {
+        x0: x0 + markDx - quiet, y0: y0 + markDy - quiet,
+        x1: x0 + markDx + markW + quiet, y1: y0 + markDy + markH + quiet,
+      };
+      const line = { x0, y0, x1: x0 + w, y1: y0 + footDy };
+      tried++;
+      if (blocking.some((boxes) => boxes.some((b) => overlaps(b.box, room) || overlaps(b.box, line))))
+        continue;
+      // Distance from where the seal would normally sit.
+      const d = Math.hypot(x0 - home.x0, y0 - home.y0);
+      if (!best || d < best.d) best = { d, rect };
+    }
+  }
+
+  return {
+    found: !!best,
+    spot: best ? { ...best.rect, movedBy: Math.round(best.d) } : null,
+    home,
+    tried,
   };
 }

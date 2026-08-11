@@ -69,8 +69,13 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
   app.post('/api/seal-fit', async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: 'No file uploaded.' });
-    const { checkSealFit } = await import('./sealFit.js');
-    return checkSealFit(await data.toBuffer());
+    const bytes = await data.toBuffer();
+    const { checkSealFit, findClearSpot } = await import('./sealFit.js');
+    const fit = await checkSealFit(bytes);
+    // When the usual corner is taken, say where it could go instead rather than
+    // leaving the only options as "cover it" or "give up".
+    const moveTo = fit.clear ? null : (await findClearSpot(bytes)).spot;
+    return { ...fit, moveTo };
   });
 
   app.post('/api/seal', async (req, reply) => {
@@ -80,6 +85,19 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     if (!iisNo) return reply.code(400).send({ error: 'iisNo is required.' });
 
     const pdfBytes = await data.toBuffer();
+    // Where to put it. `at` is passed when the caller has already been shown the
+    // collision and picked a spot; otherwise the usual corner is used.
+    let at = null;
+    const rawAt = data.fields?.at?.value;
+    if (rawAt) {
+      try {
+        const p = JSON.parse(rawAt);
+        if (Number.isFinite(p?.x0) && Number.isFinite(p?.y0)) at = { x0: p.x0, y0: p.y0 };
+      } catch {
+        return reply.code(400).send({ error: 'Bad seal position.' });
+      }
+    }
+
     const { sealPdf } = await import('./sealer.js');
     await fs.mkdir(sealDir, { recursive: true });
     const sealedPath = path.join(sealDir, `${safeName(iisNo)}.pdf`);
@@ -88,6 +106,7 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
       pdfBytes,
       keyProvider: keys,
       sealedPdfPath: sealedPath,
+      at,
     });
     await fs.writeFile(sealedPath, sealedBytes);
 

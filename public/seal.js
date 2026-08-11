@@ -18,27 +18,27 @@ function card(ink, stamp, sub, eyebrow, id, msg, extra = '') {
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Ask whether the seal would land on top of anything, and describe what.
-// Returns true to go ahead, false to stop.
-async function corner(file, iisNo) {
+// Ask whether the seal would land on top of anything.
+// Returns null to stop, otherwise the position to seal at (null = the usual corner).
+async function corner(file) {
   const fd = new FormData();
   fd.append('file', file, file.name);
   let rep;
   try {
     const res = await fetch('/api/seal-fit', { method: 'POST', body: fd });
-    if (!res.ok) return true; // the check is a courtesy; never block on its failure
+    if (!res.ok) return { at: null }; // the check is a courtesy; never block on its failure
     rep = await res.json();
   } catch {
-    return true;
+    return { at: null };
   }
   if (rep.clear) {
     // A rule crossing the corner is normal letterhead, worth a word but not a stop.
     if (rep.ruled?.length) console.info('seal crosses a footer rule on page(s)', rep.ruled.join(', '));
-    return true;
+    return { at: null };
   }
 
-  const bad = rep.pages.filter((p) => !p.clear);
-  const detail = bad
+  const detail = rep.pages
+    .filter((p) => !p.clear)
     .map((p) => {
       const bits = [];
       if (p.covered.length) bits.push(`text “${p.covered.join(' ')}”`);
@@ -48,11 +48,24 @@ async function corner(file, iisNo) {
     })
     .join('\n');
 
-  return window.confirm(
-    `The seal would be stamped on top of existing content.\n\n${detail}\n\n` +
-      'Anything underneath will be hidden on the printed copy — a signature or an ' +
-      'initial in that corner would be covered.\n\nSeal anyway?'
-  );
+  const preamble =
+    'The seal would be stamped on top of existing content.\n\n' +
+    detail +
+    '\n\nAnything underneath will be hidden on the printed copy.\n\n';
+
+  if (rep.moveTo) {
+    // There is somewhere it fits, so moving is the sensible default and the
+    // dialog leads with it.
+    if (window.confirm(preamble + 'Move the seal to clear space on the page instead?')) {
+      return { at: { x0: rep.moveTo.x0, y0: rep.moveTo.y0 }, moved: rep.moveTo };
+    }
+    return window.confirm('Seal in the usual corner anyway, covering that content?')
+      ? { at: null }
+      : null;
+  }
+  return window.confirm(preamble + 'There is no clear space on this layout. Seal anyway?')
+    ? { at: null }
+    : null;
 }
 
 document.getElementById('sealForm').addEventListener('submit', async (e) => {
@@ -63,16 +76,23 @@ document.getElementById('sealForm').addEventListener('submit', async (e) => {
   if (!file) return card('var(--stamp-amber)', 'Wait', 'Missing', 'No file', iisNo, 'Choose the signed PDF to seal.');
 
   card('var(--stamp-slate)', '…', 'Checking', 'Checking the corner', iisNo, 'Looking for anything the seal would cover…');
-  if (!(await corner(file, iisNo))) {
+  const place = await corner(file);
+  if (!place) {
     return card(
       'var(--stamp-amber)', 'Stopped', 'Not sealed', 'Sealing cancelled', iisNo,
       'Nothing was sealed. Move the content out of the lower-right corner, or seal anyway if it does not matter.'
     );
   }
 
-  card('var(--stamp-slate)', '…', 'Working', 'Sealing', iisNo, 'Stamping and recording every page…');
+  card(
+    'var(--stamp-slate)', '…', 'Working', 'Sealing', iisNo,
+    place.moved
+      ? `Stamping every page, with the seal moved ${place.moved.movedBy} pt clear of the page’s own content…`
+      : 'Stamping and recording every page…'
+  );
   const fd = new FormData();
   fd.append('iisNo', iisNo);
+  if (place.at) fd.append('at', JSON.stringify(place.at));
   fd.append('file', file, file.name);
   try {
     const res = await fetch('/api/seal', { method: 'POST', body: fd });

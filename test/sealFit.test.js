@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { checkSealFit } from '../src/sealFit.js';
-import { sealRect } from '../src/sealer.js';
+import { checkSealFit, findClearSpot, SAMPLE_FOOTER } from '../src/sealFit.js';
+import { sealRect, sealBlock } from '../src/sealer.js';
 
 const A4 = [595, 842];
 
@@ -82,7 +82,78 @@ test('content elsewhere on the page is not mistaken for a collision', async () =
   assert.equal(r.clear, true);
 });
 
-test('the checked rectangle is the one the sealer stamps', async () => {
+test('the checked rectangle is the whole block the sealer stamps', async () => {
+  // Not just the mark: the human-readable line moves with it and is the fallback
+  // when nothing scans, so it has to be clear of the page's content too.
   const r = await checkSealFit(await page());
-  assert.deepEqual(r.seal, sealRect(A4[0]));
+  assert.deepEqual(r.seal, sealBlock(A4[0], { footer: SAMPLE_FOOTER }).block);
+
+  const block = sealBlock(A4[0], { footer: SAMPLE_FOOTER });
+  assert.ok(block.footer.y1 <= block.mark.y0, 'the line sits below the mark');
+  assert.ok(block.footer.x1 === block.mark.x1, 'the line is right-aligned with the mark');
+  assert.ok(block.block.x0 <= block.footer.x0, 'the block covers the line');
+});
+
+test('a spot is found when the usual corner is occupied', async () => {
+  const home = sealBlock(A4[0], { footer: SAMPLE_FOOTER });
+  const pdf = await page(async (p, font, doc) => {
+    // Fill the whole footer band, as a real EMB order does with its own QR,
+    // address block and certification mark.
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const img = await doc.embedPng(Buffer.from(png, 'base64'));
+    p.drawImage(img, { x: 20, y: 20, width: 555, height: home.block.y1 });
+  });
+
+  assert.equal((await checkSealFit(pdf)).clear, false, 'the usual place must be blocked');
+
+  const found = await findClearSpot(pdf);
+  assert.equal(found.found, true, 'somewhere on the page must still be free');
+  assert.ok(found.spot.y0 >= home.block.y1, 'the spot must clear the occupied band');
+
+  // And sealing there must actually come out clear.
+  const at = { x0: found.spot.x0, y0: found.spot.y0 };
+  assert.equal((await checkSealFit(pdf, { at })).clear, true);
+});
+
+test('POST /api/seal accepts a position, and the sealed page is then clear', async () => {
+  // The whole point of finding a spot is being able to seal there. This walks
+  // the route staff take: check, find, seal at the found position.
+  const { openDb } = await import('../src/db.js');
+  const { createVerifier } = await import('../src/verifyService.js');
+  const { keyProvider } = await import('../src/sealKeys.js');
+  const { buildApp } = await import('../src/app.js');
+
+  const home = sealBlock(A4[0], { footer: SAMPLE_FOOTER });
+  const png =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const pdf = await page(async (p, font, doc) => {
+    const img = await doc.embedPng(Buffer.from(png, 'base64'));
+    p.drawImage(img, { x: 20, y: 20, width: 555, height: home.block.y1 });
+  });
+
+  const db = openDb(':memory:');
+  const keys = keyProvider();
+  const app = buildApp({ db, verify: createVerifier({ db, iisLookup: async () => null }), keyProvider: keys });
+
+  const found = await findClearSpot(pdf);
+  assert.equal(found.found, true);
+
+  const form = new FormData();
+  form.append('iisNo', 'R1-2026-000123');
+  form.append('at', JSON.stringify({ x0: found.spot.x0, y0: found.spot.y0 }));
+  form.append('file', new Blob([pdf], { type: 'application/pdf' }), 'in.pdf');
+
+  const res = await app.inject({ method: 'POST', url: '/api/seal', payload: form });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['x-sealed-pages'], '1');
+
+  // The sealed output must have the mark clear of what was already there.
+  const sealed = Buffer.from(res.rawPayload);
+  const after = await checkSealFit(sealed, { at: { x0: found.spot.x0, y0: found.spot.y0 } });
+  assert.equal(
+    after.pages[0].images,
+    0,
+    'the seal must not have landed on the image it was moved to avoid'
+  );
 });

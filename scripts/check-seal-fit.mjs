@@ -4,7 +4,7 @@
 //
 // Exits non-zero if the seal would cover content, so it can gate a batch.
 import { readFile } from 'node:fs/promises';
-import { checkSealFit } from '../src/sealFit.js';
+import { checkSealFit, findClearSpot } from '../src/sealFit.js';
 
 const file = process.argv[2];
 if (!file) {
@@ -16,8 +16,8 @@ const mm = process.argv[3] ? Number(process.argv[3]) : undefined;
 const rep = await checkSealFit(await readFile(file), mm ? { mm } : undefined);
 const s = rep.seal;
 console.log(
-  `seal box: x ${s.x0.toFixed(1)}–${s.x1.toFixed(1)}, y ${s.y0.toFixed(1)}–${s.y1.toFixed(1)} pt` +
-    `  (${(s.size / 72 * 25.4).toFixed(0)} mm)\n`
+  `seal block: x ${s.x0.toFixed(1)}–${s.x1.toFixed(1)}, y ${s.y0.toFixed(1)}–${s.y1.toFixed(1)} pt` +
+    `  (${mm || 22} mm mark plus its printed line)\n`
 );
 
 for (const p of rep.pages) {
@@ -44,5 +44,21 @@ for (const p of rep.pages) {
   }
 }
 
-console.log(rep.clear ? '\nOK — the seal covers nothing.' : '\nThe seal would cover content.');
-process.exitCode = rep.clear ? 0 : 1;
+if (rep.clear) {
+  console.log('\nOK — the seal covers nothing.');
+  process.exitCode = 0;
+} else {
+  console.log('\nThe seal would cover content. Looking for somewhere it fits…');
+  const spot = await findClearSpot(await readFile(file), mm ? { mm } : undefined);
+  if (spot.found) {
+    const s2 = spot.spot;
+    console.log(
+      `  clear at x ${s2.x0.toFixed(0)}, y ${s2.y0.toFixed(0)} pt` +
+        ` — ${s2.movedBy} pt from the usual corner`
+    );
+    console.log(`  seal there with:  at: { x0: ${s2.x0.toFixed(0)}, y0: ${s2.y0.toFixed(0)} }`);
+  } else {
+    console.log('  nowhere on this layout is free — the seal will have to cover something.');
+  }
+  process.exitCode = 1;
+}

@@ -18,6 +18,11 @@ const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
 export const SEALCODE_MM = 22;
 const SEAL_MARGIN = 26; // pt in from the right edge
 const SEAL_BASELINE = 34; // pt up from the bottom edge
+const FOOTER_SIZE = 6; // pt, Courier
+const FOOTER_GAP = 8; // pt between the mark and the line under it
+
+// Courier is monospace: every glyph advances 0.6 em.
+const footerWidthOf = (text) => text.length * FOOTER_SIZE * 0.6;
 
 /**
  * Where the seal lands on a page of this width, in PDF points with the origin
@@ -35,10 +40,35 @@ export function sealRect(pageWidth, { mm = SEALCODE_MM, margin = SEAL_MARGIN } =
   };
 }
 
-async function drawSealCode(pg, payload, { mm = SEALCODE_MM, margin = SEAL_MARGIN } = {}) {
+/**
+ * The mark AND the human-readable line beneath it, as one block.
+ *
+ * They have to move together. The line is the fallback when nothing will scan,
+ * so it is no use having the mark clear of the page's own content while the line
+ * lands on top of a control number — which is exactly what happens on a real EMB
+ * order, where the footer band is already full.
+ *
+ * `at` overrides the block's bottom-left corner when the usual place is taken.
+ */
+export function sealBlock(pageWidth, { mm = SEALCODE_MM, margin = SEAL_MARGIN, footer = '', at } = {}) {
+  const size = (mm / 25.4) * 72;
+  const fw = Math.max(footerWidthOf(footer), size);
+  const blockW = Math.max(size, fw);
+  // The line is right-aligned with the mark, so the block grows leftwards.
+  const x1 = at ? at.x0 + blockW : pageWidth - margin;
+  const y0 = at ? at.y0 : SEAL_BASELINE - FOOTER_GAP - FOOTER_SIZE;
+  const markY0 = y0 + FOOTER_GAP + FOOTER_SIZE;
+  return {
+    block: { x0: x1 - blockW, y0, x1, y1: markY0 + size },
+    mark: { x0: x1 - size, y0: markY0, x1, y1: markY0 + size, size },
+    footer: { x0: x1 - fw, y0, x1, y1: y0 + FOOTER_SIZE, size: FOOTER_SIZE },
+  };
+}
+
+async function drawSealCode(pg, payload, rect) {
   const { tilesFor, SIZE } = await import('./sealcode/encode.js');
   const tiles = tilesFor(payload);
-  const { x0, y0, size } = sealRect(pg.getWidth(), { mm, margin });
+  const { x0, y0, size } = rect;
   const t = size / SIZE;
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
@@ -93,9 +123,12 @@ const UPSERT_SQL = `
 
 /**
  * Seal a signed PDF: stamp a per-page footer code and record each page's digest.
+ *
+ * `at` moves the seal block's bottom-left corner when the usual corner is taken
+ * by the page's own content — see findClearSpot in sealFit.js.
  * @returns {Promise<{ sealedBytes: Uint8Array, kid: string, pages: Array }>}
  */
-export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath = null }) {
+export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath = null, at = null }) {
   const kid = keyProvider.currentKid();
   const secret = keyProvider.secretFor(kid);
 
@@ -117,12 +150,17 @@ export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath 
     const footer = formatFooter({ iisNo, k, n, kid, seal });
 
     const pg = pdfPages[i];
-    await drawSealCode(pg, payloadFor({ iisNo, k, seal }));
-    // Human-readable seal line under the mark, right-aligned to the margin.
-    const size = 6;
-    const w = font.widthOfTextAtSize(footer, size);
-    const x = Math.max(20, pg.getWidth() - 30 - w);
-    pg.drawText(footer, { x, y: 26, size, font, color: INK });
+    const block = sealBlock(pg.getWidth(), { footer, at });
+    await drawSealCode(pg, payloadFor({ iisNo, k, seal }), block.mark);
+    // Human-readable seal line directly under the mark, right-aligned with it.
+    const w = font.widthOfTextAtSize(footer, block.footer.size);
+    pg.drawText(footer, {
+      x: Math.max(20, block.footer.x1 - w),
+      y: block.footer.y0,
+      size: block.footer.size,
+      font,
+      color: INK,
+    });
 
     if (upsert) upsert.run(iisNo, k, n, digest, seal, kid, sealedPdfPath, now);
     pages.push({ k, n, digest, seal, kid });
