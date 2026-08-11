@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CerVer — proposed UI</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230b3d2e'/%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --pine: #0b3d2e;
+        --pine-deep: #06251b;
+        --paper: #edefe8;
+        --card: #fbfbf7;
+        --ink: #14211b;
+        --muted: #6a776e;
+        --rule: #c9d0c6;
+        --ok: #1b7a4d;
+        --bad: #b23a2e;
+        --warn: #b07813;
+        --slate: #5b6b62;
+
+        --display: "Bahnschrift", "DIN Alternate", "Arial Narrow", system-ui, sans-serif;
+        --body: "Segoe UI", system-ui, -apple-system, sans-serif;
+        --mono: "Cascadia Mono", ui-monospace, Consolas, "Courier New", monospace;
+
+        --bar: 4.6rem; /* height of the sticky action bar */
+      }
+
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--body);
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+      }
+      button { font: inherit; cursor: pointer; }
+      :focus-visible { outline: 2.5px solid var(--warn); outline-offset: 2px; }
+
+      /* ---------- shell ---------- */
+      .app {
+        max-width: 26rem;
+        margin: 0 auto;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        background: var(--paper);
+        /* faint ledger grid — bond paper under everything */
+        background-image:
+          linear-gradient(rgba(11, 61, 46, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(11, 61, 46, 0.03) 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+
+      /* ---------- header: one strip, not a masthead ---------- */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.55rem 0.9rem;
+        background: var(--pine);
+        color: #eaeee7;
+      }
+      .topbar .seal-dot {
+        width: 1.55rem; height: 1.55rem;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: #eaeee7;
+        display: grid; place-items: center;
+        overflow: hidden;
+      }
+      .topbar .seal-dot svg { width: 100%; height: 100%; display: block; }
+      .topbar h1 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .topbar .where { margin-left: auto; font-size: 0.62rem; letter-spacing: 0.14em; opacity: 0.7; text-transform: uppercase; font-family: var(--display); }
+
+      /* ---------- tabs ---------- */
+      .tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--card); }
+      .tabs button {
+        flex: 1;
+        border: 0;
+        background: none;
+        padding: 0.65rem 0.4rem;
+        font-family: var(--display);
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 2px solid transparent;
+      }
+      .tabs button[aria-selected="true"] { color: var(--pine); border-bottom-color: var(--pine); }
+
+      main { flex: 1; padding: 0.9rem 0.9rem calc(var(--bar) + 1.2rem); }
+
+      /* ---------- the ⓘ disclosure ---------- */
+      .line { display: flex; align-items: baseline; gap: 0.4rem; }
+      .line p { margin: 0; }
+      .note { font-size: 0.82rem; color: var(--muted); }
+      .info {
+        flex: 0 0 auto;
+        width: 1.05rem; height: 1.05rem;
+        border-radius: 50%;
+        border: 1px solid var(--rule);
+        background: transparent;
+        color: var(--muted);
+        font-family: var(--display);
+        font-size: 0.66rem;
+        line-height: 1;
+        display: inline-grid;
+        place-items: center;
+        padding: 0;
+        transform: translateY(1px);
+        position: relative;
+      }
+      /* The dot stays small — the target it answers to does not. Without this the
+         hit area is 17 px on a control meant for a thumb. */
+      .info::after { content: ""; position: absolute; inset: -13px; }
+      .info[aria-expanded="true"] { background: var(--pine); border-color: var(--pine); color: var(--paper); }
+      .more {
+        display: none;
+        margin: 0.45rem 0 0;
+        padding: 0.55rem 0.65rem;
+        border-left: 2px solid var(--pine);
+        background: rgba(11, 61, 46, 0.05);
+        font-size: 0.79rem;
+        color: var(--ink);
+      }
+      .more.open { display: block; }
+
+      /* ---------- camera ---------- */
+      .viewport {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4 / 3;      /* shorter than square: the button stays reachable */
+        background: var(--pine-deep);
+        border-radius: 3px;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+      }
+      /* the aiming target IS the mark — signature element */
+      .viewport .target { width: 46%; opacity: 0.16; }
+      .viewport .target svg { width: 100%; height: auto; display: block; }
+      .viewport .aim {
+        position: absolute;
+        font-family: var(--display);
+        font-size: 0.63rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: rgba(234, 238, 231, 0.55);
+        bottom: 0.7rem;
+      }
+      .reg { position: absolute; width: 16px; height: 16px; border: 2px solid rgba(234,238,231,0.8); pointer-events: none; }
+      .reg.tl { top: 9px; left: 9px; border-right: 0; border-bottom: 0; }
+      .reg.tr { top: 9px; right: 9px; border-left: 0; border-bottom: 0; }
+      .reg.bl { bottom: 9px; left: 9px; border-right: 0; border-top: 0; }
+      .reg.br { bottom: 9px; right: 9px; border-left: 0; border-top: 0; }
+
+      /* live readout: one line, never a paragraph */
+      .readout {
+        display: flex; align-items: center; gap: 0.5rem;
+        margin-top: 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+      .readout .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--rule); flex: 0 0 auto; }
+      .readout.is-good .dot { background: var(--ok); }
+      .readout.is-warn .dot { background: var(--warn); }
+      .readout .say { margin-left: auto; font-family: var(--body); font-size: 0.72rem; }
+
+      /* ---------- collapsed manual entry ---------- */
+      .fold { margin-top: 0.9rem; border-top: 1px solid var(--rule); }
+      .fold > summary {
+        list-style: none;
+        padding: 0.7rem 0.1rem;
+        font-family: var(--display);
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--pine);
+        display: flex; align-items: center; gap: 0.4rem;
+      }
+      .fold > summary::-webkit-details-marker { display: none; }
+      .fold > summary::after { content: "▾"; margin-left: auto; font-size: 0.7rem; }
+      .fold[open] > summary::after { content: "▴"; }
+
+      label.f { display: block; font-family: var(--display); font-size: 0.63rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pine); margin: 0.5rem 0 0.25rem; }
+      input.f {
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 0.95rem;
+        padding: 0.6rem 0.65rem;
+        border: 1.5px solid var(--rule);
+        border-radius: 2px;
+        background: var(--card);
+        color: var(--ink);
+      }
+      input.f:focus { border-color: var(--pine); }
+      .two { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.5rem; }
+
+      /* ---------- buttons ---------- */
+      .btn {
+        border: 0; border-radius: 2px;
+        padding: 0.8rem 1rem;
+        font-family: var(--display);
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        width: 100%;
+      }
+      .btn-primary { background: var(--pine); color: var(--paper); }
+      .btn-ghost { background: transparent; color: var(--pine); border: 1px solid var(--rule); }
+
+      /* sticky action bar — the primary action lives in the thumb zone */
+      .actionbar {
+        position: fixed;
+        left: 50%; transform: translateX(-50%);
+        bottom: 0;
+        width: min(26rem, 100%);
+        padding: 0.6rem 0.9rem calc(0.6rem + env(safe-area-inset-bottom));
+        background: linear-gradient(to top, var(--paper) 72%, rgba(237, 239, 232, 0));
+        z-index: 15;
+      }
+
+      /* ---------- verdict ---------- */
+      .verdict {
+        position: relative;
+        margin-top: 1rem;
+        background: var(--card);
+        border: 1px solid var(--rule);
+        border-top: 4px solid var(--state);
+        border-radius: 3px;
+        padding: 1rem 0.95rem;
+        box-shadow: 0 14px 34px -22px rgba(6, 37, 27, 0.55);
+      }
+      .stamp {
+        position: absolute; top: 0.8rem; right: 0.8rem;
+        transform: rotate(-7deg);
+        border: 2.5px solid var(--state);
+        color: var(--state);
+        border-radius: 3px;
+        padding: 0.2rem 0.45rem;
+        font-family: var(--display);
+        font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.07em; font-size: 0.8rem;
+        text-align: center; line-height: 1.05;
+        opacity: 0.92; mix-blend-mode: multiply;
+      }
+      .stamp small { display: block; font-size: 0.48rem; letter-spacing: 0.14em; opacity: 0.85; }
+      .eyebrow { font-family: var(--display); font-size: 0.62rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--state); margin: 0; }
+      .docid { font-family: var(--mono); font-size: 1.12rem; margin: 0.15rem 0 0.05rem; letter-spacing: -0.01em; }
+      .pos { font-family: var(--display); font-size: 0.78rem; color: var(--muted); letter-spacing: 0.04em; margin: 0 0 0.7rem; }
+
+      /* the page's own mark, beside its line — match it against the paper */
+      .matchrow {
+        display: flex; align-items: center; gap: 0.6rem;
+        padding: 0.55rem;
+        border: 1px dashed var(--rule);
+        border-radius: 2px;
+        background: rgba(11, 61, 46, 0.035);
+        margin-bottom: 0.75rem;
+      }
+      .matchrow .mk { width: 2.6rem; flex: 0 0 auto; }
+      .matchrow .mk svg { width: 100%; height: auto; display: block; }
+      .matchrow code { font-family: var(--mono); font-size: 0.66rem; line-height: 1.35; overflow-wrap: anywhere; }
+      .matchrow code b { color: var(--pine); }
+
+      /* ---------- pages on record ---------- */
+      .rec { margin-top: 1.3rem; }
+      .rec h2 { font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--pine); margin: 0; }
+      .pages { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+      .pages li {
+        display: flex; align-items: center; gap: 0.55rem;
+        padding: 0.5rem 0.45rem;
+        border-bottom: 1px solid var(--rule);
+        font-family: var(--mono); font-size: 0.66rem;
+      }
+      .pages li.here { background: rgba(27, 122, 77, 0.09); border-left: 3px solid var(--ok); }
+      .pages .pk { font-family: var(--display); font-size: 0.68rem; letter-spacing: 0.05em; color: var(--pine); min-width: 2.6rem; }
+      .pages li.here .pk { color: var(--ok); }
+      .pages .sealtxt { flex: 1; overflow-wrap: anywhere; color: var(--muted); }
+      .pages .sealtxt b { color: var(--ink); }
+      .pages .cmp {
+        flex: 0 0 auto; border: 1px solid var(--rule); background: transparent;
+        border-radius: 2px; padding: 0.6rem 0.55rem; min-height: 2.75rem;
+        font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--pine);
+      }
+
+      /* ---------- reference sheet ---------- */
+      .sheet {
+        margin-top: 1.3rem; border: 1px solid var(--rule); border-top: 4px solid var(--pine);
+        border-radius: 3px; background: var(--card); padding: 0.75rem;
+      }
+      .sheet header { display: flex; align-items: center; gap: 0.5rem; }
+      .sheet h2 { margin: 0; font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pine); }
+      .sheet .x { margin-left: auto; border: 1px solid var(--rule); background: none; border-radius: 2px; padding: 0.55rem 0.7rem; font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pine); }
+      .stage {
+        margin-top: 0.55rem; background: #fff; border: 1px solid var(--rule);
+        aspect-ratio: 1 / 1.414; display: grid; place-items: center; overflow: hidden;
+      }
+      .stage .fake { width: 88%; height: 92%; background: #fff; box-shadow: inset 0 0 0 1px #eceee9; padding: 6%; }
+      .stage .fake i { display: block; height: 3px; background: #dfe3dd; border-radius: 1px; margin-bottom: 5px; }
+      .stage .fake i.s { width: 55%; }
+      .stage .fake i.m { width: 78%; }
+      .stage .fake i.t { width: 38%; background: #b9c2b8; height: 5px; margin-bottom: 10px; }
+      .zoom { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.55rem; }
+      .zoom button { border: 1px solid var(--rule); background: none; border-radius: 2px; width: 2.75rem; height: 2.75rem; color: var(--pine); font-family: var(--display); }
+      .zoom span { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
+      .zoom a { margin-left: auto; font-family: var(--display); font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pine); text-decoration: none; }
+
+      /* ---------- state switcher (mockup only) ---------- */
+      .switch {
+        position: fixed; bottom: calc(var(--bar) + 0.35rem); left: 50%; transform: translateX(-50%); z-index: 40;
+        display: flex; gap: 0.2rem; background: rgba(6,37,27,0.9); padding: 0.2rem; border-radius: 3px;
+      }
+      .switch button {
+        border: 0; background: none; color: #cfd8cd; padding: 0.22rem 0.42rem;
+        font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 2px;
+      }
+      .switch button[aria-pressed="true"] { background: var(--paper); color: var(--pine); }
+
+      /* The artwork ships with a white backing rect for printing; on screen the
+         mark should sit ON the surface, so the first rect is dropped and the
+         tiles are recoloured for whatever they sit against. */
+      .target svg rect { fill: #eaeee7; }
+      .target svg rect:first-of-type { fill: none; }
+      .matchrow .mk svg rect { fill: var(--pine); }
+      .matchrow .mk svg rect:first-of-type { fill: none; }
+      .topbar .seal-dot svg rect { fill: var(--pine); }
+      .topbar .seal-dot svg rect:first-of-type { fill: none; }
+
+      /* what to look for — quiet, and only while idle */
+      .lookfor {
+        display: flex; gap: 0.7rem; align-items: center;
+        margin-top: 1rem; padding: 0.7rem;
+        border: 1px dashed var(--rule); border-radius: 3px;
+      }
+      .pagelet {
+        position: relative; flex: 0 0 auto;
+        width: 2.5rem; height: 3.3rem;
+        background: #fff; border: 1px solid var(--rule);
+        padding: 0.32rem 0.3rem;
+      }
+      .pagelet i { display: block; height: 2px; background: #e0e4de; margin-bottom: 3px; }
+      .pagelet i.w { width: 70%; }
+      .pagelet .corner {
+        position: absolute; right: 3px; bottom: 3px;
+        width: 0.85rem; height: 0.85rem;
+        background: var(--pine); border-radius: 1px;
+      }
+      .lf-t { margin: 0; font-family: var(--display); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pine); }
+      .lf-c { display: block; font-family: var(--mono); font-size: 0.63rem; color: var(--ink); margin: 0.2rem 0; overflow-wrap: anywhere; }
+      .lf-s { margin: 0; font-size: 0.74rem; color: var(--muted); }
+      .more code { font-family: var(--mono); font-size: 0.7rem; display: inline-block; margin: 0.2rem 0; }
+
+      [hidden] { display: none !important; }
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    </style>
+  </head>
+  <body>
+    <div class="switch" role="group" aria-label="Preview state">
+      <button data-state="idle" aria-pressed="true">Idle</button>
+      <button data-state="scanning" aria-pressed="false">Scanning</button>
+      <button data-state="result" aria-pressed="false">Result</button>
+      <button data-state="compare" aria-pressed="false">Compare</button>
+    </div>
+
+    <div class="app">
+      <div class="topbar">
+        <span class="seal-dot" id="crest" aria-hidden="true"></span>
+        <h1>Page check</h1>
+        <span class="where">EMB R1</span>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true">One page</button>
+        <button role="tab" aria-selected="false">Full check</button>
+      </div>
+
+      <main>
+        <!-- scope, one line + ⓘ -->
+        <div class="line" id="scope" style="margin-bottom: 0.8rem">
+          <p class="note">Checks the page, not the document.</p>
+          <button class="info" aria-expanded="false" aria-controls="n1" aria-label="More about what this checks">i</button>
+        </div>
+        <p class="more" id="n1">
+          The QR already printed on EMB documents verifies the document — scan that
+          with the phone’s own camera. This checks the part it cannot: whether the
+          page in your hand belongs to it.
+        </p>
+
+        <!-- camera -->
+        <section id="cam">
+          <div class="viewport">
+            <span class="reg tl"></span><span class="reg tr"></span>
+            <span class="reg bl"></span><span class="reg br"></span>
+            <span class="target" id="target" aria-hidden="true"></span>
+            <span class="aim" id="aim">Fill the frame with the seal</span>
+          </div>
+
+          <div class="readout" id="readout" hidden>
+            <span class="dot"></span>
+            <span id="metrics">5.7 px/tile · 100% match · 0°</span>
+            <span class="say" id="say">Reading…</span>
+          </div>
+        </section>
+
+        <!-- what you are looking for: the line is the dependable half -->
+        <section class=lookfor id=lookfor>
+          <div class=pagelet aria-hidden=true>
+            <i></i><i class=w></i><i></i><i class=w></i><i></i>
+            <span class=corner></span>
+          </div>
+          <div>
+            <p class=lf-t>Look at the bottom of the sheet</p>
+            <code class=lf-c>EMB · R1-… · p2/3 · K1 · VWHF-AS2V</code>
+            <p class=lf-s>Scan the mark, or type that line.</p>
+          </div>
+        </section>
+
+        <!-- manual entry, folded away -->
+        <details class="fold">
+          <summary>Type it instead</summary>
+          <label class="f" for="m1">Control number</label>
+          <input class="f" id="m1" value="R1-2026-010734" spellcheck="false" />
+          <div class="two">
+            <div>
+              <label class="f" for="m2">Page</label>
+              <input class="f" id="m2" value="2" inputmode="numeric" />
+            </div>
+            <div>
+              <label class="f" for="m3">Seal code</label>
+              <input class="f" id="m3" value="VWHF-AS2V" spellcheck="false" />
+            </div>
+          </div>
+          <div class="line" style="margin-top: 0.55rem">
+            <p class="note">Leave the seal blank to just look the page up.</p>
+            <button class="info" aria-expanded="false" aria-controls="n2" aria-label="More about typing it in">i</button>
+          </div>
+          <p class="more" id="n2">
+            You can paste the whole footer line into Control number and the rest
+            fills itself. Without a seal code nothing is verified — the page is
+            shown for comparison only.
+          </p>
+          <button class="btn btn-ghost" style="margin-top: 0.7rem">Verify page</button>
+        </details>
+
+        <!-- verdict -->
+        <section id="result" hidden>
+          <div class="verdict" style="--state: var(--ok)">
+            <div class="stamp">Page ok<small>Authentic seal</small></div>
+            <p class="eyebrow">Authentic page seal</p>
+            <p class="docid">R1-2026-010734</p>
+            <p class="pos">Page 2 of 3</p>
+
+            <div class="matchrow">
+              <span class="mk" id="mk" aria-hidden="true"></span>
+              <code>EMB · R1-2026-010734 · p2/3 · K1 · <b>VWHF-AS2V</b></code>
+            </div>
+
+            <div class="line" style="margin-bottom: 0.8rem">
+              <p class="note">Proves position, not wording.</p>
+              <button class="info" aria-expanded="false" aria-controls="n3" aria-label="More about what the seal proves">i</button>
+            </div>
+            <p class="more" id="n3">
+              The seal is genuine for this position in the document, so the sheet is
+              not from another document and is not out of order. It cannot confirm
+              the words printed on it — paper cannot be hashed. Compare with the
+              real page for that.
+            </p>
+
+            <button class="btn btn-primary" id="cmpBtn">Compare with the real page</button>
+          </div>
+
+          <section class="rec">
+            <div class="line">
+              <h2>Pages on record — 3 of 3</h2>
+              <button class="info" aria-expanded="false" aria-controls="n4" aria-label="More about the page list">i</button>
+            </div>
+            <p class="more" id="n4">
+              The footer on your sheet reads<br><code>EMB · R1-2026-010734 · p2/3 · K1 · VWHF-AS2V</code><br>
+              — the part after K1 is what changes per page. A page not listed here
+              is not part of this document, and a document that should have 3
+              pages is short if you hold fewer.
+            </p>
+            <ul class=pages>
+              <li>
+                <span class=pk>p1/3</span>
+                <span class=sealtxt>K1 · <b>E67R-CCT7</b></span>
+                <button class=cmp>Compare</button>
+              </li>
+              <li class=here>
+                <span class=pk>p2/3</span>
+                <span class=sealtxt>K1 · <b>VWHF-AS2V</b></span>
+                <button class=cmp>Compare</button>
+              </li>
+              <li>
+                <span class=pk>p3/3</span>
+                <span class=sealtxt>K1 · <b>EEVI-PNWA</b></span>
+                <button class=cmp>Compare</button>
+              </li>
+            </ul>
+          </section>
+        </section>
+
+        <!-- reference -->
+        <section class="sheet" id="compare" hidden>
+          <header>
+            <h2>Authoritative page 2</h2>
+            <button class="x">Close</button>
+          </header>
+          <p class="note" style="margin: 0.35rem 0 0; font-size: 0.78rem">
+            Compare with the sheet in your hand.
+          </p>
+          <div class="stage">
+            <div class="fake" aria-hidden="true">
+              <i class="t"></i><i class="m"></i><i></i><i class="s"></i>
+              <i style="margin-top:14px"></i><i class="m"></i><i></i><i></i><i class="s"></i>
+              <i style="margin-top:14px"></i><i class="m"></i><i></i><i class="s"></i>
+            </div>
+          </div>
+          <div class="zoom">
+            <button aria-label="Zoom out">−</button>
+            <span>100%</span>
+            <button aria-label="Zoom in">+</button>
+            <a href="#">Open PDF ↗</a>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="actionbar">
+      <button class="btn btn-primary" id="mainAction">Scan the seal</button>
+    </div>
+
+    <script type="module">
+      // The mark is the aiming target and the row ornament — pulled from the real
+      // encoder so the mockup shows the actual artwork, not a stand-in.
+      const P = 'CVR|R1-2026-010734|2|VWHF-AS2V';
+      try {
+        const { renderSvg } = await import('/sealcode/encode.js');
+        document.getElementById('target').innerHTML = renderSvg(P, { px: 300 });
+        document.getElementById('mk').innerHTML = renderSvg(P, { px: 120 });
+        document.getElementById('crest').innerHTML = renderSvg(P, { px: 60 });
+      } catch (e) {
+        console.warn('seal artwork unavailable', e);
+      }
+
+      // ⓘ disclosures
+      for (const b of document.querySelectorAll('.info')) {
+        b.addEventListener('click', () => {
+          const open = b.getAttribute('aria-expanded') === 'true';
+          b.setAttribute('aria-expanded', String(!open));
+          document.getElementById(b.getAttribute('aria-controls')).classList.toggle('open', !open);
+        });
+      }
+
+      // preview states
+      const readout = document.getElementById('readout');
+      const result = document.getElementById('result');
+      const compare = document.getElementById('compare');
+      const cam = document.getElementById('cam');
+      const action = document.getElementById('mainAction');
+      const aim = document.getElementById('aim');
+
+      const scope = document.getElementById('scope');
+      const scopeMore = document.getElementById('n1');
+      const lookfor = document.getElementById('lookfor');
+      const fold = document.querySelector('.fold');
+
+      const states = {
+        idle() {
+          readout.hidden = true; result.hidden = true; compare.hidden = true; cam.hidden = false;
+          scope.hidden = false; lookfor.hidden = false; fold.hidden = false;
+          action.textContent = 'Scan the seal';
+          aim.textContent = 'Fill the frame with the seal';
+        },
+        scanning() {
+          states.idle();
+          lookfor.hidden = true;
+          readout.hidden = false;
+          readout.className = 'readout is-warn';
+          document.getElementById('metrics').textContent = '3.1 px/tile · 46% match · 118°';
+          document.getElementById('say').textContent = 'Move closer';
+          action.textContent = 'Stop camera';
+          aim.textContent = 'Hold steady';
+        },
+        result() {
+          readout.hidden = true; compare.hidden = true; cam.hidden = true;
+          result.hidden = false;
+          // orientation copy has done its job once there is a verdict
+          scope.hidden = true; scopeMore.classList.remove('open'); lookfor.hidden = true; fold.hidden = true;
+          action.textContent = 'Check another page';
+        },
+        compare() {
+          states.result();
+          compare.hidden = false;
+          compare.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        },
+      };
+      for (const b of document.querySelectorAll('.switch button')) {
+        b.addEventListener('click', () => {
+          for (const o of document.querySelectorAll('.switch button')) o.setAttribute('aria-pressed', String(o === b));
+          states[b.dataset.state]();
+        });
+      }
+      document.getElementById('cmpBtn').addEventListener('click', () => states.compare());
+      states.idle();
+    </script>
+  </body>
+</html>
