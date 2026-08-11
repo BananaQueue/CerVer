@@ -61,6 +61,18 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
   });
 
   // ---- Seal a document (staff): PDF in -> sealed PDF out ----
+  // ---- Would the seal cover anything? ----
+  //
+  // Run before sealing, not after: once the sealed PDF has downloaded and gone
+  // to the printer, a seal sitting on top of a signature is discovered by
+  // whoever reads the paper.
+  app.post('/api/seal-fit', async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No file uploaded.' });
+    const { checkSealFit } = await import('./sealFit.js');
+    return checkSealFit(await data.toBuffer());
+  });
+
   app.post('/api/seal', async (req, reply) => {
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: 'No file uploaded.' });

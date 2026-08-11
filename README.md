@@ -60,13 +60,22 @@ tiles keep their ink — with the human-readable seal line beneath it:
 seal is unforgeable; it binds the document, the page position, and the page
 content.
 
-The mark is **18 mm** (0.41 mm per tile). That is not a guess: the size was
-settled by printing a calibration sheet on an office inkjet and photographing
-each rung until one failed. 18 mm was the smallest printed and it read.
+The mark is **22 mm** (0.5 mm per tile), settled by printing a calibration sheet
+on an office inkjet and photographing each rung. 18 mm reads, but not every
+time; 22 mm reads first time. At this scale ink spread leaves very little
+headroom — 0.09 mm per tile is the whole difference — so the size is measured,
+not chosen, and should not be trimmed without reprinting the ladder.
 
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
 page) → it stamps every page and records each page's digest → the downloaded
 sealed PDF is the copy that gets printed.
+
+Before stamping, the lower-right corner of every page is checked for anything the
+seal would land on — text, images, drawn shapes — and sealing stops for
+confirmation if it would cover something. A hairline rule crossing the corner is
+reported separately and does not stop anything, since most letterheads have one.
+Run it on any PDF with `node scripts/check-seal-fit.mjs <pdf>` (non-zero exit if
+the seal would cover content).
 
 **Verification.** Document-level checking is *not* CerVer's job — the QR already
 on EMB documents does that, read by the phone's own camera, and it resolves to

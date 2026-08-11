@@ -64,7 +64,7 @@ try {
       return out;
     };
 
-    const SEAL = (18 / 25.4) * 72; // must track SEALCODE_MM in src/sealer.js
+    const SEAL = (22 / 25.4) * 72; // must track SEALCODE_MM in src/sealer.js
     const out = [];
     for (let p = 1; p <= 3; p++) {
       const cv = await window.__renderPage(bytes, p, 4);

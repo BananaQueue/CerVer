@@ -18,12 +18,57 @@ function card(ink, stamp, sub, eyebrow, id, msg, extra = '') {
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+// Ask whether the seal would land on top of anything, and describe what.
+// Returns true to go ahead, false to stop.
+async function corner(file, iisNo) {
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+  let rep;
+  try {
+    const res = await fetch('/api/seal-fit', { method: 'POST', body: fd });
+    if (!res.ok) return true; // the check is a courtesy; never block on its failure
+    rep = await res.json();
+  } catch {
+    return true;
+  }
+  if (rep.clear) {
+    // A rule crossing the corner is normal letterhead, worth a word but not a stop.
+    if (rep.ruled?.length) console.info('seal crosses a footer rule on page(s)', rep.ruled.join(', '));
+    return true;
+  }
+
+  const bad = rep.pages.filter((p) => !p.clear);
+  const detail = bad
+    .map((p) => {
+      const bits = [];
+      if (p.covered.length) bits.push(`text “${p.covered.join(' ')}”`);
+      if (p.images) bits.push(`${p.images} image${p.images === 1 ? '' : 's'}`);
+      if (p.shapes) bits.push(`${p.shapes} drawn shape${p.shapes === 1 ? '' : 's'}`);
+      return `page ${p.k}: ${bits.join(', ')}`;
+    })
+    .join('\n');
+
+  return window.confirm(
+    `The seal would be stamped on top of existing content.\n\n${detail}\n\n` +
+      'Anything underneath will be hidden on the printed copy — a signature or an ' +
+      'initial in that corner would be covered.\n\nSeal anyway?'
+  );
+}
+
 document.getElementById('sealForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const iisNo = document.getElementById('iisNo').value.trim();
   const file = document.getElementById('sealFile').files[0];
   if (!iisNo) return card('var(--stamp-amber)', 'Wait', 'Missing', 'Control number required', '—', 'Enter the IIS control number first.');
   if (!file) return card('var(--stamp-amber)', 'Wait', 'Missing', 'No file', iisNo, 'Choose the signed PDF to seal.');
+
+  card('var(--stamp-slate)', '…', 'Checking', 'Checking the corner', iisNo, 'Looking for anything the seal would cover…');
+  if (!(await corner(file, iisNo))) {
+    return card(
+      'var(--stamp-amber)', 'Stopped', 'Not sealed', 'Sealing cancelled', iisNo,
+      'Nothing was sealed. Move the content out of the lower-right corner, or seal anyway if it does not matter.'
+    );
+  }
 
   card('var(--stamp-slate)', '…', 'Working', 'Sealing', iisNo, 'Stamping and recording every page…');
   const fd = new FormData();

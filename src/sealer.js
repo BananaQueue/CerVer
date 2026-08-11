@@ -8,19 +8,38 @@ const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
 // payload carried by clearing interior tiles. Drawn as vector rectangles rather
 // than an embedded raster so it stays crisp at any print resolution.
 //
-// 18 mm — 0.41 mm per tile — is where the calibration sheet settled. It printed
-// on an office inkjet and read back off the paper, which is the only test that
-// counts; the larger rungs were never needed. It also carries the mark itself at
-// a size that reads as the EMB seal rather than as a machine code.
-const SEALCODE_MM = 18;
+// 22 mm — 0.5 mm per tile. The calibration sheet was printed on an office inkjet
+// and photographed rung by rung: 18 mm reads, but only sometimes, and a mark
+// that reads on the second or third attempt is one a counter clerk will stop
+// trusting. 22 mm is the size that reads first time. The 0.09 mm per tile
+// between them is the whole difference, which is how little headroom ink spread
+// leaves at this scale — so this number is measured, not chosen, and should not
+// be trimmed again without reprinting the ladder.
+export const SEALCODE_MM = 22;
+const SEAL_MARGIN = 26; // pt in from the right edge
+const SEAL_BASELINE = 34; // pt up from the bottom edge
 
-async function drawSealCode(pg, payload, { mm = SEALCODE_MM, margin = 26 } = {}) {
+/**
+ * Where the seal lands on a page of this width, in PDF points with the origin
+ * at the bottom-left. Exported so the overlap check measures the same rectangle
+ * the sealer stamps rather than a second copy of these numbers.
+ */
+export function sealRect(pageWidth, { mm = SEALCODE_MM, margin = SEAL_MARGIN } = {}) {
+  const size = (mm / 25.4) * 72; // mm -> points
+  return {
+    x0: pageWidth - margin - size,
+    y0: SEAL_BASELINE,
+    x1: pageWidth - margin,
+    y1: SEAL_BASELINE + size,
+    size,
+  };
+}
+
+async function drawSealCode(pg, payload, { mm = SEALCODE_MM, margin = SEAL_MARGIN } = {}) {
   const { tilesFor, SIZE } = await import('./sealcode/encode.js');
   const tiles = tilesFor(payload);
-  const size = (mm / 25.4) * 72; // mm -> points
+  const { x0, y0, size } = sealRect(pg.getWidth(), { mm, margin });
   const t = size / SIZE;
-  const x0 = pg.getWidth() - margin - size;
-  const y0 = 34;
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       if (!tiles[r][c]) continue;
