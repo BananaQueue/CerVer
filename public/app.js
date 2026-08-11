@@ -1,154 +1,27 @@
-// CerVer scan/verify client. Talks to GET /api/verify/:id.
-
-const STATES = {
-  verified_local: {
-    ink: 'var(--stamp-green)',
-    stamp: 'Verified',
-    sub: 'On record',
-    eyebrow: 'Genuine document',
-    msg: 'This control number matches a document in the local registry.',
-  },
-  verified_live: {
-    ink: 'var(--stamp-green)',
-    stamp: 'Verified',
-    sub: 'IIS live',
-    eyebrow: 'Genuine document',
-    msg: 'Confirmed against IIS just now and added to the local registry.',
-  },
-  needs_staff: {
-    ink: 'var(--stamp-amber)',
-    stamp: 'Check',
-    sub: 'Not in registry',
-    eyebrow: 'Not found locally',
-    msg: 'This isn’t in the local registry yet. A staff member can run a live IIS check — this does not mean the document is fake.',
-  },
-  not_found: {
-    ink: 'var(--stamp-red)',
-    stamp: 'No record',
-    sub: 'Not in IIS',
-    eyebrow: 'No matching record',
-    msg: 'No document with this control number was found, including a live IIS check. Treat the copy with caution.',
-  },
-  invalid: {
-    ink: 'var(--stamp-slate)',
-    stamp: 'Unreadable',
-    sub: 'Bad format',
-    eyebrow: 'Couldn’t read that',
-    msg: 'That doesn’t look like an EMB control number or QR code. Check for typos and try again.',
-  },
-};
-
-const FIELDS = [
-  ['subject_name', 'Subject'],
-  ['company_name', 'Company'],
-  ['address', 'Address'],
-  ['emb_id', 'EMB ID'],
-  ['transaction_type', 'Type'],
-];
+// CerVer page-verification client.
+//
+// Document-level verification is deliberately absent: the QR already printed on
+// EMB documents does that job, the phone's own camera reads it, and it lands on
+// the office's own iis.emb.gov.ph page. Duplicating it here would only add a
+// second answer to a question already answered. What this app covers is the part
+// that QR cannot reach — whether the PAGE in your hand belongs to the document,
+// and what the authoritative page actually says.
 
 const resultEl = document.getElementById('result');
-const idInput = document.getElementById('idInput');
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-async function verify(id) {
-  const raw = String(id ?? '').trim();
-  if (!raw) return;
-  render({ status: 'loading' });
-  try {
-    const res = await fetch('/api/verify/' + encodeURIComponent(raw));
-    const data = await res.json();
-    render(data);
-  } catch {
-    render({ status: 'error' });
-  }
-}
-
-function render(data) {
-  if (data.status === 'loading') {
-    resultEl.hidden = false;
-    resultEl.innerHTML = '<div class="doc"><p class="doc-msg">Checking the registry…</p></div>';
-    resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return;
-  }
-  if (data.status === 'error') {
-    resultEl.hidden = false;
-    resultEl.innerHTML =
-      '<div class="doc" style="--state:var(--stamp-red)"><p class="doc-eyebrow">Connection problem</p><p class="doc-msg">Couldn’t reach the verification service. Check your connection and try again.</p></div>';
-    return;
-  }
-
-  const s = STATES[data.status] || STATES.invalid;
-  const rec = data.record;
-  const genuine = data.status === 'verified_local' || data.status === 'verified_live';
-  const idShown = (rec && rec.iis_no) || data.id || '—';
-
-  const rows = genuine && rec
-    ? FIELDS.filter(([k]) => rec[k]).map(
-        ([k, label]) =>
-          `<div class="f-row"><span class="f-key">${label}</span><span class="f-val${
-            k === 'emb_id' ? ' mono' : ''
-          }">${esc(rec[k])}</span></div>`
-      ).join('')
-    : '';
-
-  const sourceTag =
-    genuine && rec
-      ? `<div class="f-row"><span class="f-key">Source</span><span class="f-val"><span class="source-tag">${
-          rec.source === 'iis_live' ? 'IIS · live lookup' : 'Local registry'
-        }</span></span></div>`
-      : '';
-
-  const staffBtn =
-    data.status === 'needs_staff'
-      ? `<button class="btn btn-ghost" type="button" id="staffBtn" data-id="${esc(data.id)}">Run live IIS check (staff)</button>`
-      : '';
-
-  resultEl.hidden = false;
-  resultEl.style.setProperty('--state', s.ink);
-  resultEl.innerHTML = `
-    <div class="doc" style="--state:${s.ink}">
-      <div class="stamp">${esc(s.stamp)}<small>${esc(s.sub)}</small></div>
-      <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
-      <p class="doc-id">${esc(idShown)}</p>
-      <p class="doc-msg">${esc(s.msg)}</p>
-      ${rows || sourceTag ? `<div class="fields">${rows}${sourceTag}</div>` : ''}
-      <div class="result-actions">
-        ${staffBtn}
-        <button class="btn btn-ghost" type="button" id="againBtn">Verify another</button>
-      </div>
-    </div>`;
-  resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-  const againBtn = document.getElementById('againBtn');
-  if (againBtn)
-    againBtn.addEventListener('click', () => {
-      resultEl.hidden = true;
-      resultEl.innerHTML = '';
-      ['pgDoc', 'pgK', 'pgSeal'].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      const doc = document.getElementById('pgDoc');
-      if (doc) doc.focus();
-    });
-  const staffBtnEl = document.getElementById('staffBtn');
-  if (staffBtnEl) staffBtnEl.addEventListener('click', () => verifyStaff(staffBtnEl.dataset.id));
-
-  if (genuine && idShown && idShown !== '—') showPages(idShown);
-}
-
 // ---- Pages on record ----
 //
-// Verifying the control number says the document is genuine; it says nothing
-// about the sheet in someone's hand. So once a document checks out, list what
-// its pages ARE: how many there should be, and the exact footer line printed on
-// each. That is the physical cross-reference — the officer reads the footer off
-// the paper and finds it here, and a page that was inserted has no matching
-// line and no matching page count.
-async function showPages(iisNo) {
+// A valid seal says the sheet belongs to the document. It says nothing about
+// what the sheet should CONTAIN — that cannot be checked from paper, because
+// the content half of the seal is a hash and paper cannot be hashed. So the
+// answer is to put the document's real pages in front of the reader: how many
+// there should be, and the exact footer stamped on each. A page that was
+// inserted has no matching line, and a short document is visibly short.
+async function showPages(iisNo, highlightK) {
   let data;
   try {
     data = await (await fetch('/api/pages/' + encodeURIComponent(iisNo))).json();
@@ -160,11 +33,11 @@ async function showPages(iisNo) {
   const rows = data.pages
     .map(
       (p) => `
-      <li class="pg-row">
+      <li class="pg-row${p.k === highlightK ? ' is-here' : ''}">
         <span class="pg-k">p${p.k}/${p.n}</span>
         <code class="pg-footer">${esc(p.footer)}</code>
         ${p.hasImage
-          ? `<a class="pg-open" href="/api/page-image?doc=${encodeURIComponent(iisNo)}&k=${p.k}" target="_blank" rel="noopener">open</a>`
+          ? `<button class="pg-open" type="button" data-doc="${esc(iisNo)}" data-k="${p.k}">compare</button>`
           : '<span class="pg-open pg-none">—</span>'}
       </li>`
     )
@@ -180,37 +53,108 @@ async function showPages(iisNo) {
       and a document that should have ${data.total} pages is short if you have fewer.
     </p>
     <ul class="pages-list">${rows}</ul>`;
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('button.pg-open');
+    if (b) showReference(b.dataset.doc, Number(b.dataset.k));
+  });
   resultEl.querySelector('.doc')?.appendChild(box);
 }
 
-async function verifyStaff(id) {
-  render({ status: 'loading' });
-  try {
-    const res = await fetch('/api/verify/' + encodeURIComponent(id) + '?staff=1');
-    render(await res.json());
-  } catch {
-    render({ status: 'error' });
+// ---- The cross-reference view ----
+//
+// The authoritative page, rendered here rather than handed over as a PDF
+// download. On a phone a downloaded PDF leaves the app and comes back zoomed to
+// fit, which is useless for comparing wording against a sheet on the desk; this
+// keeps it beside the verdict and under the reader's own zoom.
+const reference = (() => {
+  const box = document.getElementById('reference');
+  const stage = document.getElementById('refStage');
+  const statusEl = document.getElementById('refStatus');
+  const titleEl = document.getElementById('refTitle');
+  const zoomEl = document.getElementById('refZoom');
+  const pdfLink = document.getElementById('refPdf');
+  let pdfjs = null;
+  let page = null;
+  let scale = 1;
+
+  async function lib() {
+    if (!pdfjs) {
+      pdfjs = await import('/vendor/pdfjs/pdf.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+    }
+    return pdfjs;
   }
-}
 
-function reset() {
-  resultEl.hidden = true;
-  resultEl.innerHTML = '';
-  idInput.value = '';
-  idInput.focus();
-}
+  async function draw() {
+    if (!page) return;
+    // Render at the device's real pixel density, so text stays sharp when the
+    // reader zooms in to compare a figure or a signature.
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const width = stage.clientWidth || 320;
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: ((width / base.width) * scale) * dpr });
+    const cv = document.createElement('canvas');
+    cv.width = vp.width;
+    cv.height = vp.height;
+    cv.style.width = `${vp.width / dpr}px`;
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+    stage.innerHTML = '';
+    stage.appendChild(cv);
+    zoomEl.textContent = `${Math.round(scale * 100)}%`;
+  }
 
-// ---- Manual form ----
-document.getElementById('manualForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  verify(idInput.value);
-});
-document.getElementById('samples').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-id]');
-  if (!btn) return;
-  idInput.value = btn.dataset.id;
-  verify(btn.dataset.id);
-});
+  async function show(iisNo, k) {
+    box.hidden = false;
+    stage.innerHTML = '';
+    stage.appendChild(statusEl);
+    statusEl.textContent = 'Loading the authoritative page…';
+    titleEl.textContent = `Authoritative page ${k} — ${iisNo}`;
+    const url = `/api/page-image?doc=${encodeURIComponent(iisNo)}&k=${k}`;
+    pdfLink.href = url;
+    scale = 1;
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        statusEl.textContent = j.error || 'No authoritative copy is on file for this page.';
+        return;
+      }
+      const buf = await res.arrayBuffer();
+      const doc = await (await lib()).getDocument({
+        data: new Uint8Array(buf),
+        // Sealed pages use the standard PDF fonts, which are not embedded in the
+        // file. Without somewhere to fetch them, rendering stalls with no error.
+        standardFontDataUrl: '/vendor/pdfjs-fonts/',
+      }).promise;
+      page = await doc.getPage(1);
+      await draw();
+    } catch (e) {
+      statusEl.textContent = 'Could not render the page — ' + e.message;
+      stage.innerHTML = '';
+      stage.appendChild(statusEl);
+    }
+  }
+
+  document.getElementById('refClose').addEventListener('click', () => {
+    box.hidden = true;
+    page = null;
+  });
+  document.getElementById('refZoomIn').addEventListener('click', () => {
+    scale = Math.min(4, scale * 1.4);
+    draw();
+  });
+  document.getElementById('refZoomOut').addEventListener('click', () => {
+    scale = Math.max(0.5, scale / 1.4);
+    draw();
+  });
+
+  return { show, hide: () => { box.hidden = true; page = null; } };
+})();
+
+function showReference(iisNo, k) {
+  reference.show(iisNo, k);
+}
 
 // ---- Camera scanning ----
 function showCameraError(hintEl, e) {
@@ -237,146 +181,6 @@ function showCameraError(hintEl, e) {
   }
   hintEl.textContent = msg;
 }
-
-// ---- Document QR scanner ----
-//
-// This ran through html5-qrcode's own camera and could not read a QR that the
-// phone's built-in camera app read instantly. Two reasons, both in how the frame
-// was captured rather than in the decoding: it never asked for a resolution, so
-// it got whatever the browser felt like — often 640x480 against the camera app's
-// full sensor — and it only examined a centred box covering 72% of the frame, so
-// a QR in the corner of a page was never looked at.
-//
-// So the frame is grabbed here instead: 1920x1080 requested, the WHOLE frame
-// offered to the decoder, and the platform's own BarcodeDetector used where it
-// exists — the same engine the camera app is using.
-const docScanner = (() => {
-  const viewport = document.getElementById('viewport');
-  const toggle = document.getElementById('scanToggle');
-  const hint = document.getElementById('scanHint');
-  const video = document.getElementById('docVideo');
-  let stream = null;
-  let raf = null;
-  let detector = null;
-  let scanFile = null;
-
-  const IDLE = 'Point the camera at the QR code in the corner of the page.';
-
-  async function ensureDecoders() {
-    if (!detector && 'BarcodeDetector' in window) {
-      try {
-        detector = new window.BarcodeDetector({ formats: ['qr_code'] });
-      } catch {
-        detector = null;
-      }
-    }
-    if (!detector && !scanFile && window.Html5Qrcode) {
-      let host = document.getElementById('qrHost');
-      if (!host) {
-        host = document.createElement('div');
-        host.id = 'qrHost';
-        host.hidden = true;
-        document.body.appendChild(host);
-      }
-      try {
-        const q = new Html5Qrcode('qrHost', {
-          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-          verbose: false,
-        });
-        scanFile = async (canvas) => {
-          const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-          if (!blob) return null;
-          try {
-            return await q.scanFile(new File([blob], 'frame.png', { type: 'image/png' }), false);
-          } catch {
-            return null;
-          }
-        };
-      } catch {
-        scanFile = null;
-      }
-    }
-  }
-
-  async function start() {
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      hint.textContent =
-        'The camera needs a secure page. On a phone open the https://…:3443 address; on this PC use http://localhost.';
-      return;
-    }
-    await ensureDecoders();
-    hint.textContent = 'Requesting camera…';
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      video.srcObject = stream;
-      await video.play();
-      viewport.classList.add('live');
-      toggle.textContent = 'Stop camera';
-      hint.textContent = 'Hold the QR in view — anywhere in frame is fine.';
-      loop();
-    } catch (err) {
-      showCameraError(hint, err);
-      stop();
-    }
-  }
-
-  function stop() {
-    if (raf) cancelAnimationFrame(raf);
-    raf = null;
-    if (stream) stream.getTracks().forEach((t) => t.stop());
-    stream = null;
-    video.srcObject = null;
-    viewport.classList.remove('live');
-    toggle.textContent = 'Start camera';
-    hint.textContent = IDLE;
-  }
-
-  function loop() {
-    const cv = document.createElement('canvas');
-    const cx = cv.getContext('2d', { willReadFrequently: true });
-    let busy = false;
-    let lastSlow = 0;
-    const tick = async () => {
-      if (!stream) return;
-      if (!busy && video.videoWidth) {
-        busy = true;
-        try {
-          // The whole frame, scaled so the long side is at most 1280 — enough
-          // for the QR's modules, and nothing cropped away.
-          const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
-          cv.width = Math.round(video.videoWidth * scale);
-          cv.height = Math.round(video.videoHeight * scale);
-          cx.drawImage(video, 0, 0, cv.width, cv.height);
-
-          if (detector) {
-            const found = await detector.detect(cv);
-            if (found && found.length) { stop(); onDecode(found[0].rawValue); return; }
-          } else if (scanFile && Date.now() - lastSlow > 400) {
-            lastSlow = Date.now();
-            const text = await scanFile(cv);
-            if (text) { stop(); onDecode(text); return; }
-          }
-        } catch {
-          /* keep scanning */
-        }
-        busy = false;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-  }
-
-  function onDecode(text) {
-    idInput.value = text;
-    verify(text);
-  }
-
-  toggle.addEventListener('click', () => (stream ? stop() : start()));
-  return { start, stop, isActive: () => !!stream };
-})();
 
 // ---- One-page scanner: reads the EMB seal code AND the Data Matrix ----
 //
@@ -607,8 +411,8 @@ document.querySelector('.modes').addEventListener('click', (e) => {
   document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
   const mode = btn.dataset.mode;
   panels.forEach((p) => (p.hidden = p.id !== 'mode-' + mode));
-  docScanner.stop();
   pageScanner.stop();
+  reference.hide();
   resultEl.hidden = true;
   resultEl.innerHTML = '';
 });
@@ -679,7 +483,7 @@ async function submitPageVerify() {
   }
 
   const staff = document.getElementById('pageStaff').checked ? '&staff=1' : '';
-  render({ status: 'loading' });
+  renderPageResult({ status: 'loading' });
   try {
     const res = await fetch(
       `/api/verify-page?doc=${encodeURIComponent(doc)}&k=${encodeURIComponent(k)}&seal=${encodeURIComponent(seal)}` +
@@ -689,7 +493,7 @@ async function submitPageVerify() {
     data._seal = seal;
     renderPageResult(data);
   } catch {
-    render({ status: 'error' });
+    renderPageResult({ status: 'error' });
   }
 }
 
@@ -698,12 +502,62 @@ document.getElementById('pageForm').addEventListener('submit', (e) => {
   submitPageVerify();
 });
 
+// Look the page up WITHOUT a seal claim. Someone holding a sheet whose seal will
+// not scan and whose footer is smudged can still get to the authoritative page
+// and compare it by eye — which is the check that catches altered wording
+// anyway. It is deliberately not dressed up as a verdict: nothing has been
+// verified, the page is simply shown.
+document.getElementById('refBtn').addEventListener('click', async () => {
+  const doc = canonDoc(document.getElementById('pgDoc').value);
+  const k = (document.getElementById('pgK').value.match(/\d+/) || [])[0] || '';
+  if (!doc || !k) {
+    renderPageResult({ status: 'need_doc_and_page' });
+    return;
+  }
+  showReference(doc, Number(k));
+  showPagesStandalone(doc, Number(k));
+});
+
+// The pages list on its own, for the reference-only path where there is no
+// verdict card to hang it under.
+async function showPagesStandalone(iisNo, k) {
+  resultEl.hidden = false;
+  resultEl.style.setProperty('--state', 'var(--stamp-slate)');
+  resultEl.innerHTML = `
+    <div class="doc" style="--state:var(--stamp-slate)">
+      <p class="doc-eyebrow">Reference only — nothing verified</p>
+      <p class="doc-id">${esc(iisNo)}</p>
+      <p class="doc-msg">Showing page ${k} as it was sealed, for comparison against the sheet you are holding.</p>
+    </div>`;
+  showPages(iisNo, k);
+}
+
 function renderPageResult(data) {
+  if (data.status === 'loading') {
+    resultEl.hidden = false;
+    resultEl.innerHTML = '<div class="doc"><p class="doc-msg">Checking the seal…</p></div>';
+    return;
+  }
+  if (data.status === 'error') {
+    resultEl.hidden = false;
+    resultEl.innerHTML =
+      '<div class="doc" style="--state:var(--stamp-red)"><p class="doc-eyebrow">Connection problem</p><p class="doc-msg">Couldn’t reach the verification service. Check your connection and try again.</p></div>';
+    return;
+  }
+  if (data.status === 'need_doc_and_page') {
+    resultEl.hidden = false;
+    resultEl.innerHTML =
+      '<div class="doc" style="--state:var(--stamp-slate)"><p class="doc-eyebrow">Need a bit more</p><p class="doc-msg">Type the control number and the page number to pull up the page.</p></div>';
+    return;
+  }
+
   const s = PAGE_STATES[data.status] || PAGE_STATES.invalid_code;
   const where = data.k && data.n ? `Page ${data.k} of ${data.n}` : '';
-  const staffLink =
-    data.authoritative && data.authoritative.sealedPdfPath
-      ? `<a class="link-btn" href="/api/page-image?doc=${encodeURIComponent(data.iisNo)}&k=${data.k}" target="_blank" rel="noopener">View authoritative page ↗</a>`
+  // A seal that checks out still cannot vouch for the words on the paper, so the
+  // comparison is offered on every outcome rather than only the bad ones.
+  const compare =
+    data.iisNo && data.k
+      ? `<button class="btn btn-ghost" type="button" id="compareBtn">Compare with the real page</button>`
       : '';
   resultEl.hidden = false;
   resultEl.style.setProperty('--state', s.ink);
@@ -713,14 +567,26 @@ function renderPageResult(data) {
       <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
       <p class="doc-id">${esc(data.iisNo || '—')}</p>
       <p class="doc-msg">${esc(where ? where + '. ' : '')}${esc(s.msg)}</p>
-      ${staffLink}
-      <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Verify another</button></div>
+      ${data.status === 'page_verified'
+        ? '<p class="doc-caveat">The seal is genuine for this position in the document. It cannot confirm the wording on the sheet — for that, compare it with the page below.</p>'
+        : ''}
+      <div class="result-actions">
+        ${compare}
+        <button class="btn btn-ghost" type="button" id="againBtn">Verify another</button>
+      </div>
     </div>`;
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
   document.getElementById('againBtn').addEventListener('click', () => {
     resultEl.hidden = true;
     resultEl.innerHTML = '';
+    reference.hide();
   });
+  document.getElementById('compareBtn')?.addEventListener('click', () =>
+    showReference(data.iisNo, Number(data.k))
+  );
+
+  if (data.iisNo) showPages(data.iisNo, Number(data.k));
 }
 
 // ---- Full document check ----
@@ -728,14 +594,15 @@ document.getElementById('docForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const file = document.getElementById('docFile').files[0];
   if (!file) return;
-  render({ status: 'loading' });
+  resultEl.hidden = false;
+  resultEl.innerHTML = '<div class="doc"><p class="doc-msg">Reading the document…</p></div>';
   const fd = new FormData();
   fd.append('file', file, file.name);
   try {
     const res = await fetch('/api/verify-document', { method: 'POST', body: fd });
     renderReport(await res.json());
   } catch {
-    render({ status: 'error' });
+    renderPageResult({ status: 'error' });
   }
 }, false);
 

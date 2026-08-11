@@ -32,3 +32,4 @@ scripts/sc.*
 # diagnostic camera frames
 frames/
 public/vendor/pdfjs/
+scripts/reference-view.png

@@ -555,3 +555,84 @@ input:focus-visible,
   color: var(--pine);
 }
 .pg-open.pg-none { color: var(--muted); }
+
+/* ---- Scope note: what this app is and is not for ---- */
+.scope-note {
+  margin: 0.9rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--pine);
+  background: rgba(11, 61, 46, 0.045);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.scope-note em { color: var(--ink); font-style: normal; font-weight: 600; }
+
+/* ---- Cross-reference viewer ---- */
+.reference {
+  margin-top: 1.4rem;
+  border: 1px solid var(--hair);
+  border-top: 4px solid var(--pine);
+  border-radius: 3px;
+  background: var(--card);
+  padding: 0.9rem;
+}
+.ref-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.ref-title {
+  margin: 0;
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-size: 0.7rem;
+  color: var(--pine);
+}
+.ref-close { padding: 0.35rem 0.7rem; }
+.ref-tip { margin: 0.4rem 0 0.7rem; font-size: 0.76rem; color: var(--muted); }
+.ref-stage {
+  background: #fff;
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  overflow: auto;
+  max-height: 70vh;
+  display: grid;
+  place-items: start center;
+  padding: 0.4rem;
+}
+.ref-stage canvas { display: block; max-width: none; }
+.ref-status { margin: 2rem 0.6rem; font-size: 0.8rem; color: var(--muted); text-align: center; }
+.ref-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+.ref-actions .btn { padding: 0.4rem 0.75rem; }
+.ref-zoom {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  min-width: 3.2rem;
+  text-align: center;
+}
+#refPdf { margin-left: auto; text-decoration: none; line-height: 1.2; }
+
+/* the page you are actually holding */
+.pg-row.is-here { background: rgba(27, 122, 77, 0.09); }
+.pg-row.is-here .pg-k { color: var(--stamp-green); }
+button.pg-open {
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+button.pg-open:hover { border-color: var(--pine); background: rgba(11, 61, 46, 0.05); }
+
+.doc-caveat {
+  margin: 0.6rem 0 0;
+  padding: 0.5rem 0.6rem;
+  background: rgba(183, 122, 22, 0.09);
+  border-left: 3px solid var(--stamp-amber);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+#refBtn { width: 100%; margin-top: 0.5rem; }

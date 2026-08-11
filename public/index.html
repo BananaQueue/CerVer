@@ -17,54 +17,23 @@
         </div>
       </header>
 
+      <p class="scope-note">
+        The QR already on EMB documents verifies the document itself — scan it with
+        the phone’s own camera. This checks the part that cannot: whether the
+        <em>page in your hand</em> belongs to it.
+      </p>
+
       <nav class="modes" role="tablist" aria-label="Verification mode">
-        <button class="mode-btn is-active" data-mode="document" role="tab">Whole document</button>
-        <button class="mode-btn" data-mode="page" role="tab">One page</button>
+        <button class="mode-btn is-active" data-mode="page" role="tab">One page</button>
         <button class="mode-btn" data-mode="doc" role="tab">Full check</button>
       </nav>
 
       <main>
-        <!-- MODE: transaction / document -->
-        <section id="mode-document" class="mode-panel">
-          <div class="intro">
-            <h1>Confirm a document is genuine.</h1>
-            <p class="lede">Scan the QR on an EMB document, or type its control number.</p>
-          </div>
-
-          <section class="scan" aria-label="Scan QR code">
-            <div class="viewport" id="viewport">
-              <span class="reg tl"></span><span class="reg tr"></span>
-              <span class="reg bl"></span><span class="reg br"></span>
-              <video id="docVideo" playsinline muted></video>
-              <div class="viewport-idle" id="viewportIdle">
-                <span class="scan-glyph" aria-hidden="true">▣</span>
-                <p>Camera preview</p>
-              </div>
-            </div>
-            <button class="btn btn-primary" id="scanToggle" type="button">Start camera</button>
-            <p class="scan-hint" id="scanHint">Point the camera at the QR code in the corner of the page.</p>
-          </section>
-
-          <div class="rule"><span>or enter the control number</span></div>
-
-          <form id="manualForm" autocomplete="off">
-            <label class="field-label" for="idInput">Control number / token</label>
-            <div class="field-row">
-              <input id="idInput" name="id" type="text" spellcheck="false" placeholder="e.g. R1-2025-023099" />
-              <button class="btn btn-primary" type="submit">Verify</button>
-            </div>
-          </form>
-          <ul class="samples" id="samples" aria-label="Try a sample">
-            <li><button type="button" data-id="R1-2025-023099">R1-2025-023099</button></li>
-            <li><button type="button" data-id="R1-2026-002465">R1-2026-002465</button></li>
-          </ul>
-        </section>
-
         <!-- MODE: single page seal -->
-        <section id="mode-page" class="mode-panel" hidden>
+        <section id="mode-page" class="mode-panel">
           <div class="intro">
             <h1>Verify one page.</h1>
-            <p class="lede">Scan the EMB seal in the page’s lower-right corner, or type the seal code.</p>
+            <p class="lede">Scan the EMB seal in the page’s lower-right corner, or type what is printed there.</p>
           </div>
 
           <section class="scan" aria-label="Scan seal code">
@@ -100,9 +69,13 @@
                 <input id="pgSeal" type="text" spellcheck="false" placeholder="TQQ3-MTBT" />
               </div>
             </div>
-            <p class="pg-tip">Reading the three bits printed lower-right. You can also paste the whole footer line into Control number.</p>
+            <p class="pg-tip">
+              You can paste the whole footer line into Control number. Leave the
+              seal code blank to just look the page up and compare it by eye.
+            </p>
             <label class="staff-toggle"><input type="checkbox" id="pageStaff" /> Staff mode (show authoritative page)</label>
             <button class="btn btn-primary" type="submit">Verify page</button>
+            <button class="btn btn-ghost" id="refBtn" type="button">Show me the page to compare</button>
           </form>
         </section>
 
@@ -120,11 +93,31 @@
         </section>
 
         <section class="result" id="result" hidden aria-live="polite"></section>
+
+        <!-- The cross-reference: the authoritative page, rendered here to be held
+             next to the sheet in the reader's hand. -->
+        <section class="reference" id="reference" hidden>
+          <div class="ref-head">
+            <p class="ref-title" id="refTitle">Authoritative page</p>
+            <button class="btn btn-ghost ref-close" id="refClose" type="button">Close</button>
+          </div>
+          <p class="ref-tip">
+            This is the page as it was sealed. Compare it with the sheet you are
+            holding — the wording, the figures, the signatures.
+          </p>
+          <div class="ref-stage" id="refStage"><p class="ref-status" id="refStatus">Loading…</p></div>
+          <div class="ref-actions">
+            <button class="btn btn-ghost" id="refZoomOut" type="button">−</button>
+            <span class="ref-zoom" id="refZoom">100%</span>
+            <button class="btn btn-ghost" id="refZoomIn" type="button">+</button>
+            <a class="btn btn-ghost" id="refPdf" href="#" target="_blank" rel="noopener">Open PDF ↗</a>
+          </div>
+        </section>
       </main>
 
       <footer class="colophon">
         <p><a href="/seal.html">Staff · seal a document →</a> &nbsp;·&nbsp; <a href="/send.html">Send a capture →</a></p>
-        <p>A “needs staff check” or “not sealed” result means a document isn’t in the registry yet — not that it’s fake.</p>
+        <p>A “not sealed” result means the page isn’t in the registry yet — not that it’s fake.</p>
       </footer>
     </div>
 

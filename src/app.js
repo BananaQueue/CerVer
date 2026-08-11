@@ -149,6 +149,24 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     };
   });
 
+  // pdf.js, straight out of node_modules rather than copied into public/, so the
+  // served copy cannot fall behind the installed one. The page-reference view
+  // renders the authoritative page with it.
+  const pdfjsDir = path.join(srcDir, '..', 'node_modules', 'pdfjs-dist');
+  app.register(fastifyStatic, {
+    root: path.join(pdfjsDir, 'build'),
+    prefix: '/vendor/pdfjs/',
+    decorateReply: false,
+  });
+  // Sealed pages are typeset in the standard PDF fonts, which are NOT embedded in
+  // the file — the viewer is expected to supply them. Without this pdf.js has
+  // nothing to draw the text with and rendering never completes, silently.
+  app.register(fastifyStatic, {
+    root: path.join(pdfjsDir, 'standard_fonts'),
+    prefix: '/vendor/pdfjs-fonts/',
+    decorateReply: false,
+  });
+
   // Serve the seal-code modules as ESM so the browser can decode a mark from
   // the camera with exactly the code the tests exercise — no second
   // implementation to drift.
