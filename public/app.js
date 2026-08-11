@@ -13,6 +13,72 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// ---- The mark, as furniture ----
+//
+// The artwork is the aiming target in the idle viewport and the ornament beside
+// each verdict, drawn by the same encoder that stamps the paper. It is what the
+// person is hunting for on the sheet, so showing it costs nothing and saves
+// explaining.
+let renderSvg = null;
+const markSvg = (payload, px) => {
+  try {
+    return renderSvg ? renderSvg(payload, { px }) : '';
+  } catch {
+    return '';
+  }
+};
+(async () => {
+  try {
+    ({ renderSvg } = await import('/sealcode/encode.js'));
+    const sample = 'CVR|R1-2026-010734|1|E67R-CCT7';
+    document.getElementById('crest').innerHTML = markSvg(sample, 60);
+    document.getElementById('target').innerHTML = markSvg(sample, 300);
+  } catch (e) {
+    console.warn('seal artwork unavailable', e);
+  }
+})();
+
+// ---- Explanation on demand ----
+//
+// Every nuance here is worth stating and none is worth a paragraph at a counter,
+// so each one is a line with a button that opens the rest.
+function wireInfo(root = document) {
+  for (const b of root.querySelectorAll('.info')) {
+    if (b.dataset.wired) continue;
+    b.dataset.wired = '1';
+    b.addEventListener('click', () => {
+      const open = b.getAttribute('aria-expanded') === 'true';
+      b.setAttribute('aria-expanded', String(!open));
+      document.getElementById(b.getAttribute('aria-controls'))?.classList.toggle('open', !open);
+    });
+  }
+}
+wireInfo();
+
+// ---- The one button at the bottom of the screen ----
+//
+// A counter tool is held in one hand, so the primary action lives in the thumb
+// zone and changes with the situation rather than multiplying into a row of
+// buttons the thumb cannot reach.
+const actionBtn = document.getElementById('scanToggle2');
+const scope = document.getElementById('scope');
+const lookfor = document.getElementById('lookfor');
+const fold = document.getElementById('fold');
+const scanArea = document.getElementById('scanArea');
+
+// `show` covers the explaining; the camera is a separate switch, because it
+// stays up while scanning but gives way once there is a verdict to read.
+const orientation = (show, camera = true) => {
+  for (const el of [scope, lookfor, fold]) if (el) el.hidden = !show;
+  if (scanArea) scanArea.hidden = !camera;
+  if (!show) document.getElementById('scopeMore')?.classList.remove('open');
+};
+
+function clearResult() {
+  resultEl.hidden = true;
+  resultEl.innerHTML = '';
+}
+
 // ---- Pages on record ----
 //
 // A valid seal says the sheet belongs to the document. It says nothing about
@@ -30,34 +96,43 @@ async function showPages(iisNo, highlightK) {
   }
   if (!data.pages || !data.pages.length) return;
 
+  // The control number is already on the verdict above; repeating it on every
+  // row is noise. What changes per page is the seal, so that is what shows.
   const rows = data.pages
     .map(
       (p) => `
-      <li class="pg-row${p.k === highlightK ? ' is-here' : ''}">
-        <span class="pg-k">p${p.k}/${p.n}</span>
-        <code class="pg-footer">${esc(p.footer)}</code>
+      <li class="${p.k === highlightK ? 'here' : ''}">
+        <span class="pk">p${p.k}/${p.n}</span>
+        <span class="sealtxt">K${esc(p.kid)} · <b>${esc(p.seal)}</b></span>
         ${p.hasImage
-          ? `<button class="pg-open" type="button" data-doc="${esc(iisNo)}" data-k="${p.k}">compare</button>`
-          : '<span class="pg-open pg-none">—</span>'}
+          ? `<button class="cmp" type="button" data-doc="${esc(iisNo)}" data-k="${p.k}">Compare</button>`
+          : '<button class="cmp" type="button" disabled>—</button>'}
       </li>`
     )
     .join('');
 
-  const box = document.createElement('div');
-  box.className = 'pages-box';
+  const box = document.createElement('section');
+  box.className = 'rec';
   box.innerHTML = `
-    <p class="pages-title">Pages on record — ${data.pages.length} of ${data.total}</p>
-    <p class="pages-tip">
-      Check the footer printed at the bottom of the sheet in your hand against the
-      line below. A page that does not appear here is not part of this document,
-      and a document that should have ${data.total} pages is short if you have fewer.
+    <div class="line">
+      <h2>Pages on record — ${data.pages.length} of ${data.total}</h2>
+      <button class="info" type="button" aria-expanded="false" aria-controls="pagesMore"
+              aria-label="More about the page list">i</button>
+    </div>
+    <p class="more" id="pagesMore">
+      The footer on your sheet reads<br>
+      <code>${esc(data.pages[0].footer)}</code><br>
+      — the part after K${esc(data.pages[0].kid)} changes per page. A page not
+      listed here is not part of this document, and a document that should have
+      ${data.total} pages is short if you hold fewer.
     </p>
-    <ul class="pages-list">${rows}</ul>`;
+    <ul class="pages">${rows}</ul>`;
   box.addEventListener('click', (e) => {
-    const b = e.target.closest('button.pg-open');
-    if (b) showReference(b.dataset.doc, Number(b.dataset.k));
+    const b = e.target.closest('button.cmp');
+    if (b && !b.disabled) showReference(b.dataset.doc, Number(b.dataset.k));
   });
-  resultEl.querySelector('.doc')?.appendChild(box);
+  resultEl.appendChild(box);
+  wireInfo(box);
 }
 
 // ---- The cross-reference view ----
@@ -198,7 +273,9 @@ const pageScanner = (() => {
   const hint = document.getElementById('scanHint2');
   const video = document.getElementById('pageVideo');
   const diag = document.getElementById('pageDiag');
-  const diagLine = document.getElementById('diagLine');
+  const metrics = document.getElementById('diagMetrics');
+  const say = document.getElementById('diagSay');
+  const aim = document.getElementById('aim');
   const saveBtn = document.getElementById('saveFrame');
   let stream = null;
   let raf = null;
@@ -212,7 +289,7 @@ const pageScanner = (() => {
         ({ inspect: sealInspect } = await import('/sealcode/decode.js'));
       } catch (e) {
         console.error('seal-code decoder failed to load', e);
-        diagLine.textContent = 'decoder module failed to load — ' + e;
+        say.textContent = 'Decoder failed to load';
       }
     }
   }
@@ -234,8 +311,11 @@ const pageScanner = (() => {
       await video.play();
       viewport.classList.add('live');
       toggle.textContent = 'Stop camera';
-      hint.textContent = 'Fill the frame with the seal and hold steady.';
+      hint.textContent = '';
       diag.hidden = false;
+      saveBtn.hidden = false;
+      orientation(false); // the camera is up; the explaining is done
+      clearResult();
       loop();
     } catch (err) {
       showCameraError(hint, err);
@@ -250,8 +330,11 @@ const pageScanner = (() => {
     stream = null;
     video.srcObject = null;
     viewport.classList.remove('live');
-    toggle.textContent = 'Scan seal code';
-    hint.textContent = 'Point at the seal in the page’s lower-right corner.';
+    diag.hidden = true;
+    saveBtn.hidden = true;
+    toggle.textContent = 'Scan the seal';
+    // A result of its own will re-hide these; on a plain stop they come back.
+    if (resultEl.hidden) orientation(true);
   }
 
   // Turn the decoder's diagnostics into something aimable.
@@ -268,23 +351,27 @@ const pageScanner = (() => {
     const score = info.score || 0;
     let cls, msg;
     if (score >= 0.72) {
-      cls = 'good'; msg = 'reading…';
+      cls = 'good'; msg = 'Reading…';
     } else if (score >= 0.45) {
-      cls = 'warn'; msg = 'seal found but not clean — hold steady, more light, less glare';
+      cls = 'warn'; msg = 'Steady, more light';
     } else if (pitch < MIN_PITCH) {
-      cls = 'bad'; msg = 'nothing yet — move closer until the seal fills the frame';
+      cls = 'bad'; msg = 'Move closer';
     } else {
-      cls = 'bad'; msg = 'no seal in view — centre it, and keep other dark marks out of frame';
+      cls = 'bad'; msg = 'No seal in view';
     }
-    diagLine.innerHTML =
-      `px/tile <b>${pitch.toFixed(1)}</b>   match <b>${(score * 100).toFixed(0)}%</b>   ` +
-      `angle <b>${info.deg || 0}°</b>\n<span class="${cls}">${msg}</span>`;
+    // One line. The numbers are for whoever is debugging it; the phrase on the
+    // right is for whoever is holding the phone.
+    diag.className = 'readout is-' + cls;
+    metrics.textContent =
+      `${pitch.toFixed(1)} px/tile · ${(score * 100).toFixed(0)}% match · ${info.deg || 0}°`;
+    say.textContent = msg;
+    aim.textContent = cls === 'good' ? 'Hold steady' : 'Fill the frame with the seal';
   }
 
   // Ship a failing frame to the server so the decoder can be worked on against
   // the real image rather than a guess about what the camera saw.
   saveBtn?.addEventListener('click', async () => {
-    if (!lastFrame) { diagLine.textContent = 'no frame captured yet'; return; }
+    if (!lastFrame) { say.textContent = 'No frame yet'; return; }
     saveBtn.disabled = true;
     const prev = saveBtn.textContent;
     saveBtn.textContent = 'Saving…';
@@ -342,32 +429,50 @@ const pageScanner = (() => {
     tick();
   }
 
-  toggle.addEventListener('click', () => (stream ? stop() : start()));
+  // One button, three jobs — see the note on the action bar above.
+  toggle.addEventListener('click', () => {
+    if (stream) return stop();
+    if (!resultEl.hidden) {
+      // showing a verdict: clear it and go back to a ready camera
+      clearResult();
+      reference.hide();
+      orientation(true);
+      toggle.textContent = 'Scan the seal';
+      return;
+    }
+    start();
+  });
   return { start, stop, isActive: () => !!stream };
 })();
 
 // ---- Mode switching ----
 const PAGE_STATES = {
-  page_verified: { ink: 'var(--stamp-green)', stamp: 'Page ok', sub: 'Authentic seal', eyebrow: 'Authentic page seal', msg: 'This page’s seal is genuine for its position in the document.' },
-  invalid_seal: { ink: 'var(--stamp-red)', stamp: 'Bad seal', sub: 'Not authentic', eyebrow: 'Invalid seal', msg: 'This code is not a valid EMB seal for this page. Treat the copy with caution.' },
-  not_sealed: { ink: 'var(--stamp-amber)', stamp: 'Not sealed', sub: 'No record', eyebrow: 'No sealed page found', msg: 'No sealed page matches this code. It may be unsealed or from another document.' },
-  page_count_mismatch: { ink: 'var(--stamp-amber)', stamp: 'Count off', sub: 'Page count', eyebrow: 'Page-count mismatch', msg: 'This code claims a different total page count than the registered document.' },
-  invalid_code: { ink: 'var(--stamp-slate)', stamp: 'Unreadable', sub: 'Bad format', eyebrow: 'Couldn’t read that', msg: 'That doesn’t look like a page seal line. Check for typos.' },
+  page_verified: { ink: 'var(--ok)', stamp: 'Page ok', sub: 'Authentic seal', eyebrow: 'Authentic page seal', msg: 'Genuine for its position in the document.' },
+  invalid_seal: { ink: 'var(--bad)', stamp: 'Bad seal', sub: 'Not authentic', eyebrow: 'Invalid seal', msg: 'Not a valid EMB seal for this page. Treat the copy with caution.' },
+  not_sealed: { ink: 'var(--warn)', stamp: 'Not sealed', sub: 'No record', eyebrow: 'No sealed page found', msg: 'Nothing on record matches. It may be unsealed, or from another document.' },
+  page_count_mismatch: { ink: 'var(--warn)', stamp: 'Count off', sub: 'Page count', eyebrow: 'Page-count mismatch', msg: 'This claims a different page count than the registered document.' },
+  invalid_code: { ink: 'var(--slate)', stamp: 'Unreadable', sub: 'Bad format', eyebrow: 'Couldn’t read that', msg: 'That isn’t a page seal line. Check for typos.' },
 };
-const PAGE_COLORS = { verified: 'var(--stamp-green)', content_altered: 'var(--stamp-red)', not_sealed: 'var(--stamp-amber)' };
+const PAGE_COLORS = { verified: 'var(--ok)', content_altered: 'var(--bad)', not_sealed: 'var(--warn)' };
 const PAGE_LABELS = { verified: 'verified', content_altered: 'altered', not_sealed: 'unsealed' };
 
 const panels = document.querySelectorAll('.mode-panel');
 document.querySelector('.modes').addEventListener('click', (e) => {
   const btn = e.target.closest('.mode-btn');
   if (!btn) return;
-  document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    b.classList.toggle('is-active', b === btn);
+    b.setAttribute('aria-selected', String(b === btn));
+  });
   const mode = btn.dataset.mode;
   panels.forEach((p) => (p.hidden = p.id !== 'mode-' + mode));
   pageScanner.stop();
   reference.hide();
-  resultEl.hidden = true;
-  resultEl.innerHTML = '';
+  clearResult();
+  // The camera and its orientation copy belong to the page mode only.
+  orientation(mode === 'page');
+  document.querySelector('.actionbar').hidden = mode !== 'page';
+  actionBtn.textContent = 'Scan the seal';
 });
 
 // ---- Page-seal verification ----
@@ -475,66 +580,75 @@ document.getElementById('refBtn').addEventListener('click', async () => {
 // verdict card to hang it under.
 async function showPagesStandalone(iisNo, k) {
   resultEl.hidden = false;
-  resultEl.style.setProperty('--state', 'var(--stamp-slate)');
   resultEl.innerHTML = `
-    <div class="doc" style="--state:var(--stamp-slate)">
-      <p class="doc-eyebrow">Reference only — nothing verified</p>
-      <p class="doc-id">${esc(iisNo)}</p>
-      <p class="doc-msg">Showing page ${k} as it was sealed, for comparison against the sheet you are holding.</p>
+    <div class="verdict" style="--state:var(--slate)">
+      <p class="eyebrow">Reference only — nothing verified</p>
+      <p class="docid">${esc(iisNo)}</p>
+      <p class="msg">Page ${esc(k)} as it was sealed, for comparison.</p>
     </div>`;
+  orientation(false, false);
+  actionBtn.textContent = 'Check another page';
   showPages(iisNo, k);
 }
 
 function renderPageResult(data) {
-  if (data.status === 'loading') {
-    resultEl.hidden = false;
-    resultEl.innerHTML = '<div class="doc"><p class="doc-msg">Checking the seal…</p></div>';
-    return;
-  }
-  if (data.status === 'error') {
+  const brief = (state, eyebrow, msg) => {
     resultEl.hidden = false;
     resultEl.innerHTML =
-      '<div class="doc" style="--state:var(--stamp-red)"><p class="doc-eyebrow">Connection problem</p><p class="doc-msg">Couldn’t reach the verification service. Check your connection and try again.</p></div>';
-    return;
-  }
-  if (data.status === 'need_doc_and_page') {
-    resultEl.hidden = false;
-    resultEl.innerHTML =
-      '<div class="doc" style="--state:var(--stamp-slate)"><p class="doc-eyebrow">Need a bit more</p><p class="doc-msg">Type the control number and the page number to pull up the page.</p></div>';
-    return;
-  }
+      `<div class="verdict" style="--state:${state}">` +
+      `<p class="eyebrow">${esc(eyebrow)}</p><p class="msg">${esc(msg)}</p></div>`;
+  };
+  if (data.status === 'loading') return brief('var(--slate)', 'Checking', 'Reading the registry…');
+  if (data.status === 'error')
+    return brief('var(--bad)', 'No connection', 'Couldn’t reach the service. Check the connection and try again.');
+  if (data.status === 'need_doc_and_page')
+    return brief('var(--slate)', 'Need a bit more', 'Type the control number and the page number.');
 
   const s = PAGE_STATES[data.status] || PAGE_STATES.invalid_code;
   const where = data.k && data.n ? `Page ${data.k} of ${data.n}` : '';
-  // A seal that checks out still cannot vouch for the words on the paper, so the
-  // comparison is offered on every outcome rather than only the bad ones.
-  const compare =
-    data.iisNo && data.k
-      ? `<button class="btn btn-ghost" type="button" id="compareBtn">Compare with the real page</button>`
-      : '';
+  const payload =
+    data.iisNo && data.k && data._seal ? `CVR|${data.iisNo}|${data.k}|${data._seal}` : null;
+
+  // The mark beside its own line. Holding these two up against the sheet is the
+  // physical act the whole app exists to support, so they belong together.
+  const match = payload
+    ? `<div class="matchrow">
+         <span class="mk" aria-hidden="true">${markSvg(payload, 120)}</span>
+         <code>EMB · ${esc(data.iisNo)} · p${esc(data.k)}/${esc(data.n)} · K${esc(data.kid || '1')} · <b>${esc(data._seal)}</b></code>
+       </div>`
+    : '';
+
+  const verified = data.status === 'page_verified';
   resultEl.hidden = false;
-  resultEl.style.setProperty('--state', s.ink);
   resultEl.innerHTML = `
-    <div class="doc" style="--state:${s.ink}">
+    <div class="verdict" style="--state:${s.ink}">
       <div class="stamp">${esc(s.stamp)}<small>${esc(s.sub)}</small></div>
-      <p class="doc-eyebrow">${esc(s.eyebrow)}</p>
-      <p class="doc-id">${esc(data.iisNo || '—')}</p>
-      <p class="doc-msg">${esc(where ? where + '. ' : '')}${esc(s.msg)}</p>
-      ${data.status === 'page_verified'
-        ? '<p class="doc-caveat">The seal is genuine for this position in the document. It cannot confirm the wording on the sheet — for that, compare it with the page below.</p>'
+      <p class="eyebrow">${esc(s.eyebrow)}</p>
+      <p class="docid">${esc(data.iisNo || '—')}</p>
+      ${where ? `<p class="pos">${esc(where)}</p>` : ''}
+      ${match}
+      ${verified
+        ? `<div class="line" style="margin-bottom:0.8rem">
+             <p class="note">Proves position, not wording.</p>
+             <button class="info" type="button" aria-expanded="false" aria-controls="verdictMore"
+                     aria-label="More about what the seal proves">i</button>
+           </div>
+           <p class="more" id="verdictMore">
+             The seal is genuine for this position in the document, so the sheet is
+             not from another document and is not out of order. It cannot confirm
+             the words printed on it — paper cannot be hashed. Compare with the real
+             page for that.
+           </p>`
+        : `<p class="msg">${esc(s.msg)}</p>`}
+      ${data.iisNo && data.k
+        ? '<button class="btn btn-primary" type="button" id="compareBtn">Compare with the real page</button>'
         : ''}
-      <div class="result-actions">
-        ${compare}
-        <button class="btn btn-ghost" type="button" id="againBtn">Verify another</button>
-      </div>
     </div>`;
+  wireInfo(resultEl);
+  orientation(false, false);
+  actionBtn.textContent = 'Check another page';
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-  document.getElementById('againBtn').addEventListener('click', () => {
-    resultEl.hidden = true;
-    resultEl.innerHTML = '';
-    reference.hide();
-  });
   document.getElementById('compareBtn')?.addEventListener('click', () =>
     showReference(data.iisNo, Number(data.k))
   );
@@ -548,7 +662,7 @@ document.getElementById('docForm').addEventListener('submit', async (e) => {
   const file = document.getElementById('docFile').files[0];
   if (!file) return;
   resultEl.hidden = false;
-  resultEl.innerHTML = '<div class="doc"><p class="doc-msg">Reading the document…</p></div>';
+  resultEl.innerHTML = '<div class="verdict" style="--state:var(--slate)"><p class="msg">Reading the document…</p></div>';
   const fd = new FormData();
   fd.append('file', file, file.name);
   try {
@@ -561,32 +675,35 @@ document.getElementById('docForm').addEventListener('submit', async (e) => {
 
 function renderReport(rep) {
   const intact = rep.document.status === 'intact';
-  const ink = intact ? 'var(--stamp-green)' : 'var(--stamp-red)';
+  const ink = intact ? 'var(--ok)' : 'var(--bad)';
   const rows = rep.pages
     .map((p) => {
-      const st = PAGE_COLORS[p.status] || 'var(--stamp-slate)';
+      const st = PAGE_COLORS[p.status] || 'var(--slate)';
       const label = PAGE_LABELS[p.status] || p.status;
-      return `<div class="page-item" style="--pstate:${st}"><span class="pnum">p${p.position}</span><span>${esc(p.iisNo || 'unsealed page')}</span><span class="pstatus">${esc(label)}</span></div>`;
+      return `<li><span class="pill" style="background:${st}">${esc(label)}</span>
+              <span>p${p.position}</span>
+              <span style="color:var(--muted)">${esc(p.iisNo || 'unsealed')}</span></li>`;
     })
     .join('');
   const findings = rep.findings.length
-    ? `<ul class="findings">${rep.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+    ? `<ul class="more open" style="list-style:disc;padding-left:1.1rem;margin-top:0.7rem">
+         ${rep.findings.map((f) => `<li>${esc(f)}</li>`).join('')}
+       </ul>`
     : '';
+  const count = rep.document.claimedPages
+    ? `${rep.document.actualPages} of ${rep.document.claimedPages} pages`
+    : `${rep.document.actualPages} pages`;
+
   resultEl.hidden = false;
-  resultEl.style.setProperty('--state', ink);
   resultEl.innerHTML = `
-    <div class="doc" style="--state:${ink}">
-      <div class="stamp">${intact ? 'Intact' : 'Tampered'}<small>${rep.document.actualPages} pp</small></div>
-      <div class="report-head"><span class="report-doc">${esc(rep.document.iisNo || 'Unknown document')}</span></div>
-      <p class="report-sub">${rep.document.claimedPages ? esc(rep.document.actualPages + ' of ' + rep.document.claimedPages + ' pages') : esc(rep.document.actualPages + ' pages')} · ${intact ? 'all seals genuine' : rep.findings.length + ' issue' + (rep.findings.length === 1 ? '' : 's')}</p>
-      <div class="pagelist">${rows}</div>
+    <div class="report" style="--state:${ink}">
+      <div class="stamp">${intact ? 'Intact' : 'Tampered'}<small>${esc(rep.document.actualPages)} pp</small></div>
+      <p class="eyebrow">${intact ? 'Every page verified' : 'Document altered'}</p>
+      <p class="docid">${esc(rep.document.iisNo || 'Unknown document')}</p>
+      <p class="pos">${esc(count)}</p>
+      <ol>${rows}</ol>
       ${findings}
-      <div class="result-actions"><button class="btn btn-ghost" type="button" id="againBtn">Check another</button></div>
     </div>`;
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  document.getElementById('againBtn').addEventListener('click', () => {
-    resultEl.hidden = true;
-    resultEl.innerHTML = '';
-    document.getElementById('docFile').value = '';
-  });
+  document.getElementById('docFile').value = '';
 }

@@ -3,122 +3,148 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>CerVer — EMB Document Verification</title>
+    <title>CerVer — Page Check</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230b3d2e'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/check.css" />
   </head>
   <body>
-    <div class="sheet">
-      <header class="masthead">
-        <div class="crest" aria-hidden="true">EMB</div>
-        <div class="masthead-text">
-          <p class="eyebrow">Environmental Management Bureau · Region I</p>
-          <p class="office">Document Verification</p>
-        </div>
-      </header>
-
-      <p class="scope-note">
-        The QR already on EMB documents verifies the document itself — scan it with
-        the phone’s own camera. This checks the part that cannot: whether the
-        <em>page in your hand</em> belongs to it.
-      </p>
+    <div class="app">
+      <div class="topbar">
+        <span class="seal-dot" id="crest" aria-hidden="true"></span>
+        <h1>Page check</h1>
+        <span class="where">EMB R1</span>
+      </div>
 
       <nav class="modes" role="tablist" aria-label="Verification mode">
-        <button class="mode-btn is-active" data-mode="page" role="tab">One page</button>
-        <button class="mode-btn" data-mode="doc" role="tab">Full check</button>
+        <button class="mode-btn is-active" data-mode="page" role="tab" aria-selected="true">One page</button>
+        <button class="mode-btn" data-mode="doc" role="tab" aria-selected="false">Full check</button>
       </nav>
 
       <main>
-        <!-- MODE: single page seal -->
+        <!-- MODE: one page -->
         <section id="mode-page" class="mode-panel">
-          <div class="intro">
-            <h1>Verify one page.</h1>
-            <p class="lede">Scan the EMB seal in the page’s lower-right corner, or type what is printed there.</p>
+          <div class="line" id="scope" style="margin-bottom: 0.8rem">
+            <p class="note">Checks the page, not the document.</p>
+            <button class="info" type="button" aria-expanded="false" aria-controls="scopeMore"
+                    aria-label="More about what this checks">i</button>
           </div>
+          <p class="more" id="scopeMore">
+            The QR already printed on EMB documents verifies the document — scan
+            that with the phone’s own camera. This checks the part it cannot:
+            whether the page in your hand belongs to it.
+          </p>
 
-          <section class="scan" aria-label="Scan seal code">
+          <section id="scanArea" aria-label="Scan the seal">
             <div class="viewport" id="viewport2">
               <span class="reg tl"></span><span class="reg tr"></span>
               <span class="reg bl"></span><span class="reg br"></span>
               <video id="pageVideo" playsinline muted></video>
-              <div class="viewport-idle" id="viewportIdle2">
-                <span class="scan-glyph" aria-hidden="true">▣</span>
-                <p>Scan the EMB seal</p>
-              </div>
+              <span class="target" id="target" aria-hidden="true"></span>
+              <span class="aim" id="aim">Fill the frame with the seal</span>
             </div>
-            <button class="btn btn-primary" id="scanToggle2" type="button">Scan seal code</button>
-            <p class="scan-hint" id="scanHint2">Point at the seal in the page’s lower-right corner.</p>
-            <div class="diag" id="pageDiag" hidden>
-              <p class="diag-line" id="diagLine">—</p>
-              <button class="btn btn-ghost" id="saveFrame" type="button">Save this frame for diagnosis</button>
+
+            <div class="readout" id="pageDiag" hidden>
+              <span class="dot"></span>
+              <span id="diagMetrics">—</span>
+              <span class="say" id="diagSay"></span>
+            </div>
+            <p class="scan-hint" id="scanHint2"></p>
+            <button class="btn btn-ghost" id="saveFrame" type="button" hidden
+                    style="margin-top: 0.5rem">Save this frame for diagnosis</button>
+          </section>
+
+          <!-- what you are looking for: the printed line is the dependable half -->
+          <section class="lookfor" id="lookfor">
+            <div class="pagelet" aria-hidden="true">
+              <i></i><i class="w"></i><i></i><i class="w"></i><i></i>
+              <span class="corner"></span>
+            </div>
+            <div>
+              <p class="lf-t">Look at the bottom of the sheet</p>
+              <code class="lf-c">EMB · R1-… · p2/3 · K1 · VWHF-AS2V</code>
+              <p class="lf-s">Scan the mark, or type that line.</p>
             </div>
           </section>
 
-          <div class="rule"><span>or type it</span></div>
-
-          <form id="pageForm" autocomplete="off">
-            <label class="field-label" for="pgDoc">Control number</label>
-            <input id="pgDoc" type="text" spellcheck="false" placeholder="R1-2026-010734" />
-            <div class="pg-two">
-              <div>
-                <label class="field-label" for="pgK">Page #</label>
-                <input id="pgK" type="text" inputmode="numeric" spellcheck="false" placeholder="3" />
+          <details class="fold" id="fold">
+            <summary>Type it instead</summary>
+            <form id="pageForm" autocomplete="off">
+              <label class="f-label" for="pgDoc">Control number</label>
+              <input class="f-input" id="pgDoc" type="text" spellcheck="false" placeholder="R1-2026-010734" />
+              <div class="two">
+                <div>
+                  <label class="f-label" for="pgK">Page</label>
+                  <input class="f-input" id="pgK" type="text" inputmode="numeric" spellcheck="false" placeholder="3" />
+                </div>
+                <div>
+                  <label class="f-label" for="pgSeal">Seal code</label>
+                  <input class="f-input" id="pgSeal" type="text" spellcheck="false" placeholder="TQQ3-MTBT" />
+                </div>
               </div>
-              <div>
-                <label class="field-label" for="pgSeal">Seal code</label>
-                <input id="pgSeal" type="text" spellcheck="false" placeholder="TQQ3-MTBT" />
+              <div class="line" style="margin-top: 0.55rem">
+                <p class="note">Leave the seal blank to just look the page up.</p>
+                <button class="info" type="button" aria-expanded="false" aria-controls="typeMore"
+                        aria-label="More about typing it in">i</button>
               </div>
-            </div>
-            <p class="pg-tip">
-              You can paste the whole footer line into Control number. Leave the
-              seal code blank to just look the page up and compare it by eye.
-            </p>
-            <label class="staff-toggle"><input type="checkbox" id="pageStaff" /> Staff mode (show authoritative page)</label>
-            <button class="btn btn-primary" type="submit">Verify page</button>
-            <button class="btn btn-ghost" id="refBtn" type="button">Show me the page to compare</button>
-          </form>
+              <p class="more" id="typeMore">
+                You can paste the whole footer line into Control number and the rest
+                fills itself. Without a seal code nothing is verified — the page is
+                shown for comparison only.
+              </p>
+              <label class="staff-toggle"><input type="checkbox" id="pageStaff" /> Staff mode</label>
+              <button class="btn btn-primary" type="submit" style="margin-top: 0.7rem">Verify page</button>
+              <button class="btn btn-ghost" id="refBtn" type="button">Show me the page to compare</button>
+            </form>
+          </details>
         </section>
 
         <!-- MODE: full document upload -->
         <section id="mode-doc" class="mode-panel" hidden>
-          <div class="intro">
-            <h1>Full document check.</h1>
-            <p class="lede">Upload the PDF for a page-by-page alteration report.</p>
+          <div class="line" style="margin-bottom: 0.8rem">
+            <p class="note">Checks every page of the PDF for edits.</p>
+            <button class="info" type="button" aria-expanded="false" aria-controls="docMore"
+                    aria-label="More about the full check">i</button>
           </div>
+          <p class="more" id="docMore">
+            Upload the sealed PDF and every page is re-hashed against the registry.
+            This is the exact check — it names which pages were altered, inserted,
+            removed or reordered. It needs the digital file; a photograph of paper
+            cannot be hashed.
+          </p>
           <form id="docForm" autocomplete="off">
-            <label class="field-label" for="docFile">Sealed PDF</label>
-            <input id="docFile" type="file" accept="application/pdf" />
-            <button class="btn btn-primary" type="submit">Check document</button>
+            <label class="f-label" for="docFile">Sealed PDF</label>
+            <input class="f-input" id="docFile" type="file" accept="application/pdf" />
+            <button class="btn btn-primary" type="submit" style="margin-top: 0.7rem">Check document</button>
           </form>
         </section>
 
-        <section class="result" id="result" hidden aria-live="polite"></section>
+        <section id="result" hidden aria-live="polite"></section>
 
-        <!-- The cross-reference: the authoritative page, rendered here to be held
-             next to the sheet in the reader's hand. -->
+        <!-- the cross-reference: the authoritative page, to hold next to the sheet -->
         <section class="reference" id="reference" hidden>
           <div class="ref-head">
             <p class="ref-title" id="refTitle">Authoritative page</p>
-            <button class="btn btn-ghost ref-close" id="refClose" type="button">Close</button>
+            <button class="ref-close" id="refClose" type="button">Close</button>
           </div>
-          <p class="ref-tip">
-            This is the page as it was sealed. Compare it with the sheet you are
-            holding — the wording, the figures, the signatures.
-          </p>
+          <p class="ref-tip">Compare with the sheet in your hand.</p>
           <div class="ref-stage" id="refStage"><p class="ref-status" id="refStatus">Loading…</p></div>
           <div class="ref-actions">
-            <button class="btn btn-ghost" id="refZoomOut" type="button">−</button>
+            <button id="refZoomOut" type="button" aria-label="Zoom out">−</button>
             <span class="ref-zoom" id="refZoom">100%</span>
-            <button class="btn btn-ghost" id="refZoomIn" type="button">+</button>
-            <a class="btn btn-ghost" id="refPdf" href="#" target="_blank" rel="noopener">Open PDF ↗</a>
+            <button id="refZoomIn" type="button" aria-label="Zoom in">+</button>
+            <a id="refPdf" href="#" target="_blank" rel="noopener">Open PDF ↗</a>
           </div>
         </section>
       </main>
 
       <footer class="colophon">
         <p><a href="/seal.html">Staff · seal a document →</a> &nbsp;·&nbsp; <a href="/send.html">Send a capture →</a></p>
-        <p>A “not sealed” result means the page isn’t in the registry yet — not that it’s fake.</p>
+        <p>“Not sealed” means the page isn’t in the registry yet — not that it’s fake.</p>
       </footer>
+    </div>
+
+    <div class="actionbar">
+      <button class="btn btn-primary" id="scanToggle2" type="button">Scan the seal</button>
     </div>
 
     <script type="module" src="/app.js"></script>

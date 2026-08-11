@@ -1,0 +1,398 @@
+/* CerVer — page check.
+   A counter instrument: someone at a desk with paper in one hand and a phone in
+   the other. Everything here follows from that — a 44px header instead of a
+   masthead, the primary action pinned in the thumb zone, and explanation folded
+   behind a tappable "i" rather than set as paragraphs.
+
+   The staff pages (seal, send) keep styles.css; this sheet is only for the page
+   people actually stand at a counter using. */
+
+:root {
+  --pine: #0b3d2e;
+  --pine-deep: #06251b;
+  --paper: #edefe8;
+  --card: #fbfbf7;
+  --ink: #14211b;
+  --muted: #6a776e;
+  --rule: #c9d0c6;
+  --ok: #1b7a4d;
+  --bad: #b23a2e;
+  --warn: #b07813;
+  --slate: #5b6b62;
+
+  --display: "Bahnschrift", "DIN Alternate", "Arial Narrow", system-ui, sans-serif;
+  --body: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Mono", ui-monospace, Consolas, "Courier New", monospace;
+
+  --bar: 4.6rem; /* the sticky action bar reserves this much at the page foot */
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; }
+:focus-visible { outline: 2.5px solid var(--warn); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.app {
+  max-width: 26rem;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  /* faint ledger grid — bond paper under everything */
+  background-image:
+    linear-gradient(rgba(11, 61, 46, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 61, 46, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ---- header: one strip. The old masthead cost a fifth of the screen to say a
+       name the person holding the phone already knows. ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  background: var(--pine);
+  color: #eaeee7;
+}
+.topbar .seal-dot {
+  width: 1.55rem; height: 1.55rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #eaeee7;
+  display: grid; place-items: center;
+  overflow: hidden;
+}
+.topbar .seal-dot svg { width: 100%; height: 100%; display: block; }
+.topbar h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.topbar .where {
+  margin-left: auto;
+  font-family: var(--display);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ---- modes ---- */
+.modes { display: flex; border-bottom: 1px solid var(--rule); background: var(--card); }
+.mode-btn {
+  flex: 1;
+  border: 0;
+  background: none;
+  padding: 0.65rem 0.4rem;
+  font-family: var(--display);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.mode-btn.is-active { color: var(--pine); border-bottom-color: var(--pine); }
+
+main { flex: 1; padding: 0.9rem 0.9rem calc(var(--bar) + 1.2rem); }
+
+/* ---- the "i" disclosure ---- */
+.line { display: flex; align-items: baseline; gap: 0.4rem; }
+.line p, .line h2 { margin: 0; }
+.note { font-size: 0.82rem; color: var(--muted); }
+.info {
+  flex: 0 0 auto;
+  width: 1.05rem; height: 1.05rem;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 0.66rem;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  position: relative;
+  transform: translateY(1px);
+}
+/* The dot stays small; the target it answers to does not. Without this the hit
+   area is 17px on a control meant for a thumb. */
+.info::after { content: ""; position: absolute; inset: -13px; }
+.info[aria-expanded="true"] { background: var(--pine); border-color: var(--pine); color: var(--paper); }
+.more {
+  display: none;
+  margin: 0.45rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border-left: 2px solid var(--pine);
+  background: rgba(11, 61, 46, 0.05);
+  font-size: 0.79rem;
+}
+.more.open { display: block; }
+.more code { font-family: var(--mono); font-size: 0.7rem; display: inline-block; margin: 0.2rem 0; }
+
+/* ---- camera ---- */
+.viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3; /* shorter than square, so the action stays reachable */
+  background: var(--pine-deep);
+  border-radius: 3px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+#pageVideo { width: 100%; height: 100%; object-fit: cover; display: none; }
+.viewport.live #pageVideo { display: block; }
+.viewport.live .target, .viewport.live .aim { display: none; }
+
+/* the aiming target IS the mark — nothing else has this artwork */
+.target { width: 46%; opacity: 0.16; }
+.target svg { width: 100%; height: auto; display: block; }
+.target svg rect { fill: #eaeee7; }
+.target svg rect:first-of-type { fill: none; } /* drop the print backing rect */
+
+.aim {
+  position: absolute;
+  bottom: 0.7rem;
+  font-family: var(--display);
+  font-size: 0.63rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(234, 238, 231, 0.55);
+}
+.reg { position: absolute; width: 16px; height: 16px; border: 2px solid rgba(234, 238, 231, 0.8); pointer-events: none; }
+.reg.tl { top: 9px; left: 9px; border-right: 0; border-bottom: 0; }
+.reg.tr { top: 9px; right: 9px; border-left: 0; border-bottom: 0; }
+.reg.bl { bottom: 9px; left: 9px; border-right: 0; border-top: 0; }
+.reg.br { bottom: 9px; right: 9px; border-left: 0; border-top: 0; }
+
+/* live readout: one line, never a paragraph */
+.readout {
+  display: flex; align-items: center; gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.readout .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--rule); flex: 0 0 auto; }
+.readout.is-good .dot { background: var(--ok); }
+.readout.is-warn .dot { background: var(--warn); }
+.readout.is-bad .dot { background: var(--bad); }
+.readout .say { margin-left: auto; font-family: var(--body); font-size: 0.72rem; }
+.scan-hint { margin: 0.5rem 0 0; font-size: 0.78rem; color: var(--muted); }
+
+/* ---- what to look for (idle only) ---- */
+.lookfor {
+  display: flex; gap: 0.7rem; align-items: center;
+  margin-top: 1rem; padding: 0.7rem;
+  border: 1px dashed var(--rule); border-radius: 3px;
+}
+.pagelet {
+  position: relative; flex: 0 0 auto;
+  width: 2.5rem; height: 3.3rem;
+  background: #fff; border: 1px solid var(--rule);
+  padding: 0.32rem 0.3rem;
+}
+.pagelet i { display: block; height: 2px; background: #e0e4de; margin-bottom: 3px; }
+.pagelet i.w { width: 70%; }
+.pagelet .corner { position: absolute; right: 3px; bottom: 3px; width: 0.85rem; height: 0.85rem; background: var(--pine); border-radius: 1px; }
+.lf-t { margin: 0; font-family: var(--display); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pine); }
+.lf-c { display: block; font-family: var(--mono); font-size: 0.63rem; margin: 0.2rem 0; overflow-wrap: anywhere; }
+.lf-s { margin: 0; font-size: 0.74rem; color: var(--muted); }
+
+/* ---- folded manual entry ---- */
+.fold { margin-top: 0.9rem; border-top: 1px solid var(--rule); }
+.fold > summary {
+  list-style: none;
+  padding: 0.7rem 0.1rem;
+  font-family: var(--display);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pine);
+  display: flex; align-items: center; gap: 0.4rem;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: "▾"; margin-left: auto; font-size: 0.7rem; }
+.fold[open] > summary::after { content: "▴"; }
+
+.f-label { display: block; font-family: var(--display); font-size: 0.63rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pine); margin: 0.5rem 0 0.25rem; }
+.f-input {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  padding: 0.6rem 0.65rem;
+  border: 1.5px solid var(--rule);
+  border-radius: 2px;
+  background: var(--card);
+  color: var(--ink);
+}
+.f-input:focus { border-color: var(--pine); }
+.two { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.5rem; }
+.staff-toggle { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.7rem; font-size: 0.78rem; color: var(--muted); }
+
+/* ---- buttons ---- */
+.btn {
+  border: 0; border-radius: 2px;
+  padding: 0.8rem 1rem;
+  font-family: var(--display);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  width: 100%;
+}
+.btn-primary { background: var(--pine); color: var(--paper); }
+.btn-primary:hover { background: var(--pine-deep); }
+.btn-ghost { background: transparent; color: var(--pine); border: 1px solid var(--rule); }
+.btn-ghost:hover { border-color: var(--pine); background: rgba(11, 61, 46, 0.05); }
+.btn + .btn { margin-top: 0.5rem; }
+
+/* the primary action lives in the thumb zone, always */
+.actionbar {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: 0;
+  width: min(26rem, 100%);
+  padding: 0.6rem 0.9rem calc(0.6rem + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--paper) 72%, rgba(237, 239, 232, 0));
+  z-index: 15;
+}
+
+/* ---- verdict ---- */
+.verdict {
+  position: relative;
+  margin-top: 1rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-top: 4px solid var(--state, var(--slate));
+  border-radius: 3px;
+  padding: 1rem 0.95rem;
+  box-shadow: 0 14px 34px -22px rgba(6, 37, 27, 0.55);
+}
+.stamp {
+  position: absolute; top: 0.8rem; right: 0.8rem;
+  transform: rotate(-7deg);
+  border: 2.5px solid var(--state);
+  color: var(--state);
+  border-radius: 3px;
+  padding: 0.2rem 0.45rem;
+  font-family: var(--display);
+  font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; font-size: 0.8rem;
+  text-align: center; line-height: 1.05;
+  opacity: 0.92; mix-blend-mode: multiply;
+  animation: stamp-in 0.3s cubic-bezier(0.2, 1.4, 0.5, 1) both;
+}
+.stamp small { display: block; font-size: 0.48rem; letter-spacing: 0.14em; opacity: 0.85; }
+@keyframes stamp-in {
+  0% { transform: rotate(-7deg) scale(1.8); opacity: 0; }
+  60% { opacity: 0.95; }
+  100% { transform: rotate(-7deg) scale(1); opacity: 0.92; }
+}
+.eyebrow { font-family: var(--display); font-size: 0.62rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--state, var(--muted)); margin: 0; }
+.docid { font-family: var(--mono); font-size: 1.12rem; margin: 0.15rem 0 0.05rem; }
+.pos { font-family: var(--display); font-size: 0.78rem; color: var(--muted); letter-spacing: 0.04em; margin: 0 0 0.7rem; }
+.verdict .msg { margin: 0 0 0.7rem; font-size: 0.85rem; }
+
+/* the page's own mark beside its line — the physical act this app supports is
+   holding these two up against the paper */
+.matchrow {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem;
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  background: rgba(11, 61, 46, 0.035);
+  margin-bottom: 0.75rem;
+}
+.matchrow .mk { width: 2.6rem; flex: 0 0 auto; }
+.matchrow .mk svg { width: 100%; height: auto; display: block; }
+.matchrow .mk svg rect { fill: var(--pine); }
+.matchrow .mk svg rect:first-of-type { fill: none; }
+.matchrow code { font-family: var(--mono); font-size: 0.66rem; line-height: 1.35; overflow-wrap: anywhere; }
+.matchrow code b { color: var(--pine); }
+
+/* ---- pages on record ---- */
+.rec { margin-top: 1.3rem; }
+.rec h2 { font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--pine); }
+.pages { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.pages li {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono); font-size: 0.66rem;
+}
+.pages li.here { background: rgba(27, 122, 77, 0.09); border-left: 3px solid var(--ok); }
+.pages .pk { font-family: var(--display); font-size: 0.68rem; letter-spacing: 0.05em; color: var(--pine); min-width: 2.6rem; }
+.pages li.here .pk { color: var(--ok); }
+.pages .sealtxt { flex: 1; overflow-wrap: anywhere; color: var(--muted); }
+.pages .sealtxt b { color: var(--ink); }
+.pages .cmp {
+  flex: 0 0 auto;
+  border: 1px solid var(--rule); background: transparent; border-radius: 2px;
+  padding: 0.6rem 0.55rem; min-height: 2.75rem;
+  font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pine);
+}
+.pages .cmp:hover { border-color: var(--pine); }
+.pages .cmp[disabled] { color: var(--muted); opacity: 0.5; }
+
+/* ---- reference sheet ---- */
+.reference {
+  margin-top: 1.3rem;
+  border: 1px solid var(--rule); border-top: 4px solid var(--pine);
+  border-radius: 3px; background: var(--card); padding: 0.75rem;
+}
+.ref-head { display: flex; align-items: center; gap: 0.5rem; }
+.ref-title { margin: 0; font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pine); }
+.ref-close {
+  margin-left: auto; border: 1px solid var(--rule); background: none; border-radius: 2px;
+  padding: 0.55rem 0.7rem;
+  font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pine);
+}
+.ref-tip { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--muted); }
+.ref-stage {
+  margin-top: 0.55rem; background: #fff; border: 1px solid var(--rule);
+  overflow: auto; max-height: 70vh; display: grid; place-items: start center; padding: 0.3rem;
+}
+.ref-stage canvas { display: block; max-width: none; }
+.ref-status { margin: 2rem 0.6rem; font-size: 0.8rem; color: var(--muted); text-align: center; }
+.ref-actions { display: flex; align-items: center; gap: 0.45rem; margin-top: 0.55rem; }
+.ref-actions button, .ref-actions a {
+  border: 1px solid var(--rule); background: none; border-radius: 2px;
+  min-width: 2.75rem; height: 2.75rem;
+  display: inline-grid; place-items: center;
+  color: var(--pine); font-family: var(--display); font-size: 0.75rem; text-decoration: none;
+}
+.ref-zoom { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); min-width: 3rem; text-align: center; }
+#refPdf { margin-left: auto; padding: 0 0.6rem; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* ---- full-document report ---- */
+.report { margin-top: 1rem; background: var(--card); border: 1px solid var(--rule); border-top: 4px solid var(--state, var(--slate)); border-radius: 3px; padding: 1rem 0.95rem; }
+.report ol { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.report li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid var(--rule); font-size: 0.8rem; }
+.report .pill { font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.1rem 0.35rem; border-radius: 2px; color: #fff; }
+
+.colophon { padding: 1rem 0.9rem calc(var(--bar) + 1rem); font-size: 0.72rem; color: var(--muted); }
+.colophon a { color: var(--pine); }
+.colophon p { margin: 0 0 0.35rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

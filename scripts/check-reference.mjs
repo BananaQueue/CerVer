@@ -22,6 +22,8 @@ try {
 
   await page.goto('http://localhost:3100/', { waitUntil: 'networkidle' });
 
+  // manual entry is folded away now — scanning is the normal path
+  await page.evaluate(() => { document.getElementById('fold').open = true; });
   await page.fill('#pgDoc', 'R1-2026-010734');
   await page.fill('#pgK', '2');
   await page.fill('#pgSeal', 'VWHF-AS2V');
@@ -29,8 +31,10 @@ try {
 
   await page.waitForSelector('#compareBtn', { timeout: 15000 });
   const stamp = (await page.textContent('.stamp')).replace(/\s+/g, ' ').trim();
-  const listed = await page.$$eval('.pg-footer', (n) => n.map((e) => e.textContent.trim()));
-  const here2 = await page.textContent('.pg-row.is-here .pg-k');
+  const listed = await page.$$eval('.pages .sealtxt', (n) =>
+    n.map((e) => e.textContent.replace(/\s+/g, ' ').trim())
+  );
+  const here2 = await page.textContent('.pages li.here .pk');
 
   await page.click('#compareBtn');
   await page.waitForSelector('#refStage canvas', { timeout: 30000 });
@@ -52,7 +56,7 @@ try {
 
   console.log('verdict stamp   :', stamp);
   console.log('page highlighted:', here2);
-  console.log('footers listed  :');
+  console.log('seals listed    :');
   for (const f of listed) console.log('   ', f);
   console.log('rendered canvas :', `${canvas.w}x${canvas.h}`);
   console.log('painted ink     :', painted.darkPixels, `px (${(painted.fraction * 100).toFixed(2)}%)`);
