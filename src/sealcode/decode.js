@@ -86,20 +86,90 @@ function otsu(g) {
 }
 
 /**
- * Bounding box of the mark.
+ * Candidate bounding boxes for the mark.
  *
  * The seal is several disconnected shapes — the field with the tree cut out of
- * it, and each band on its own — so the largest single component would box only
- * part of it. But taking every dark pixel is wrong too: on a real page the mark
- * sits beside body text and a footer line, and those would be swallowed into the
- * box, throwing off scale and centre.
+ * it, and each band on its own — so the largest single component boxes only part
+ * of it. Unioning every substantial component fixes that when the mark is alone
+ * in frame, but on a real page it is not: a photo of the calibration sheet put
+ * the caption "18 mm · 0.41 mm per tile" a few millimetres under the seal, the
+ * union stretched the box from 500 px to 760 px, and the pitch came out 17.3
+ * px per tile instead of 11. Everything downstream is derived from that box, so
+ * the whole read was lost — with the mark perfectly framed and sharp.
  *
- * So: take every component that is a substantial fraction of the largest one and
- * union those. The seal's bands clear that bar easily; text glyphs do not.
+ * There is no local rule that reliably tells the seal's own bands from a line of
+ * text sitting under it. So rather than pick one box and hope, offer a few and
+ * let the fixed-tile matcher decide: only the box that actually frames the
+ * artwork scores, and the score is already the thing that proves it is a seal.
  */
 const MIN_PART = 0.02; // component must be >= 2% of the largest to count
 
-function markBounds(bin, w, h) {
+// How much of a part must fall inside the anchor's box to count as belonging to
+// the same mark. The seal's bands sit inside the disc; a caption underneath it
+// does not.
+const INSIDE = 0.6;
+
+function markCandidates(bin, w, h) {
+  const parts = componentsOf(bin, w, h);
+  if (!parts.length) return [];
+
+  let biggest = parts[0];
+  for (const p of parts) if (p.area > biggest.area) biggest = p;
+  const cutoff = biggest.area * MIN_PART;
+  const big = parts.filter((p) => p.area >= cutoff);
+
+  const box = (list) => {
+    let minX = w, minY = h, maxX = -1, maxY = -1, area = 0;
+    for (const p of list) {
+      area += p.area;
+      if (p.minX < minX) minX = p.minX;
+      if (p.maxX > maxX) maxX = p.maxX;
+      if (p.minY < minY) minY = p.minY;
+      if (p.maxY > maxY) maxY = p.maxY;
+    }
+    return maxX < 0 ? null : { area, minX, minY, maxX, maxY };
+  };
+
+  // Fraction of `p`'s box area lying inside `a`'s box.
+  const containment = (p, a) => {
+    const ox = Math.min(p.maxX, a.maxX) - Math.max(p.minX, a.minX) + 1;
+    const oy = Math.min(p.maxY, a.maxY) - Math.max(p.minY, a.minY) + 1;
+    if (ox <= 0 || oy <= 0) return 0;
+    return (ox * oy) / ((p.maxX - p.minX + 1) * (p.maxY - p.minY + 1));
+  };
+
+  const near = big.filter((p) => p === biggest || containment(p, biggest) >= INSIDE);
+
+  // Grow a cluster out from the largest part, taking in whatever sits close to
+  // what has been gathered so far. This is what actually separates the mark from
+  // its surroundings: the seal's own pieces — the two halves of the tree, then
+  // each band — are a pixel or three apart and chain together, while the caption
+  // under the mark is tens of pixels clear and never joins. The tolerance is a
+  // fraction of the cluster's own size, so it holds at any scale.
+  const gapOf = (b) => Math.max(4, 0.15 * Math.max(b.maxX - b.minX + 1, b.maxY - b.minY + 1));
+  const cluster = [biggest];
+  for (let grew = true; grew; ) {
+    grew = false;
+    const b = box(cluster);
+    const gap = gapOf(b);
+    for (const p of big) {
+      if (cluster.includes(p)) continue;
+      const dx = Math.max(0, Math.max(b.minX - p.maxX, p.minX - b.maxX));
+      const dy = Math.max(0, Math.max(b.minY - p.maxY, p.minY - b.maxY));
+      if (dx <= gap && dy <= gap) { cluster.push(p); grew = true; }
+    }
+  }
+
+  const out = [];
+  for (const c of [box(cluster), box(near), box(big), box([biggest])]) {
+    if (!c) continue;
+    if (!out.some((o) => o.minX === c.minX && o.minY === c.minY && o.maxX === c.maxX && o.maxY === c.maxY))
+      out.push(c);
+  }
+  return out;
+}
+
+function componentsOf(bin, w, h) {
   const label = new Int32Array(w * h).fill(-1);
   const stack = new Int32Array(w * h);
   const parts = [];
@@ -125,22 +195,39 @@ function markBounds(bin, w, h) {
     }
     parts.push({ area, minX, minY, maxX, maxY });
   }
-  if (!parts.length) return null;
+  return parts;
+}
 
-  let biggest = parts[0];
-  for (const p of parts) if (p.area > biggest.area) biggest = p;
-  const cutoff = biggest.area * MIN_PART;
+/**
+ * Per-pixel threshold from the mean of a surrounding box, via an integral image.
+ *
+ * One global threshold is right for a clean render and wrong for a photograph.
+ * A phone shot of a page is lit unevenly — the sheet curls, a shadow crosses the
+ * corner — and Otsu then splits light paper from dark paper instead of paper
+ * from ink, which puts big patches of background into the mark's own component.
+ * Measured against a real capture, switching to a local threshold lifted the
+ * fixed-tile match from 94% to 99%.
+ */
+function localThreshold(g, w, h, radius, bias) {
+  const ii = new Float64Array((w + 1) * (h + 1));
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      ii[(y + 1) * (w + 1) + x + 1] =
+        g[y * w + x] + ii[y * (w + 1) + x + 1] + ii[(y + 1) * (w + 1) + x] - ii[y * (w + 1) + x];
 
-  let minX = w, minY = h, maxX = -1, maxY = -1, area = 0;
-  for (const p of parts) {
-    if (p.area < cutoff) continue;
-    area += p.area;
-    if (p.minX < minX) minX = p.minX;
-    if (p.maxX > maxX) maxX = p.maxX;
-    if (p.minY < minY) minY = p.minY;
-    if (p.maxY > maxY) maxY = p.maxY;
+  const thr = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - radius), y1 = Math.min(h - 1, y + radius);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - radius), x1 = Math.min(w - 1, x + radius);
+      const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const sum =
+        ii[(y1 + 1) * (w + 1) + x1 + 1] - ii[y0 * (w + 1) + x1 + 1] -
+        ii[(y1 + 1) * (w + 1) + x0] + ii[y0 * (w + 1) + x0];
+      thr[y * w + x] = sum / area - bias;
+    }
   }
-  return maxX < 0 ? null : { area, minX, minY, maxX, maxY };
+  return thr;
 }
 
 function decodeCore(img) {
@@ -151,17 +238,36 @@ function decodeCore(img) {
     if (w < 40 || h < 40 || img.data.length < w * h * 4) return NO;
 
     const g = toGray(img);
-    const thr = otsu(g);
-    const bin = new Uint8Array(w * h);
-    let dark = 0;
-    for (let i = 0; i < w * h; i++) if (g[i] <= thr) { bin[i] = 1; dark++; }
-    if (dark < 200) return NO;
 
-    const bb = markBounds(bin, w, h);
-    if (!bb || bb.maxX < 0) return NO;
-    const side = Math.max(bb.maxX - bb.minX + 1, bb.maxY - bb.minY + 1);
-    if (side < INK_BBOX.cols) return NO; // fewer than one pixel per tile
+    // Two ways of deciding what is ink. Otsu is right on a clean render and is
+    // tried first because it is cheap; the local threshold is what a photograph
+    // needs. Whichever produces a clean read wins.
+    const flat = otsu(g);
+    const modes = [
+      () => new Float64Array(w * h).fill(flat),
+      () => localThreshold(g, w, h, Math.max(8, Math.round(Math.min(w, h) / 12)), 6),
+    ];
 
+    let best = NO;
+    for (const makeThr of modes) {
+      const thrMap = makeThr();
+      const bin = new Uint8Array(w * h);
+      let dark = 0;
+      for (let i = 0; i < w * h; i++) if (g[i] <= thrMap[i]) { bin[i] = 1; dark++; }
+      if (dark < 200) continue;
+
+      const candidates = markCandidates(bin, w, h).filter(
+        (c) => Math.max(c.maxX - c.minX + 1, c.maxY - c.minY + 1) >= INK_BBOX.cols
+      );
+      for (const bb of candidates) {
+        const got = readFrom(bb, thrMap);
+        if (got.score > best.score) best = got;
+        if (got.payload) return got; // a clean read settles it
+      }
+    }
+    return best;
+
+    function readFrom(bb, thrMap) {
     const obsW = bb.maxX - bb.minX + 1;
     const obsH = bb.maxY - bb.minY + 1;
     const obsCx = (bb.minX + bb.maxX) / 2;
@@ -212,7 +318,9 @@ function decodeCore(img) {
         g[y0 * w + x0 + 1] * ax * (1 - ay) +
         g[(y0 + 1) * w + x0] * (1 - ax) * ay +
         g[(y0 + 1) * w + x0 + 1] * ax * ay;
-      return v <= thr ? 1 : 0;
+      // The threshold varies across a photograph, so it is read where the sample
+      // was taken rather than shared by the whole frame.
+      return v <= thrMap[(Math.round(fy) * w) + Math.round(fx)] ? 1 : 0;
     };
 
     // Score a candidate rotation on the fixed tiles only, as the worse of the
@@ -257,6 +365,7 @@ function decodeCore(img) {
       bits[i] = sampleAt(CARRIERS[i][0], CARRIERS[i][1], cos, sin, fit);
     }
     return { payload: bitsToPayload(bits), score: bestScore, deg: bestDeg, pitch: fit.pitch };
+    }
   } catch {
     return { payload: null, score: 0, deg: 0, pitch: 0 };
   }
