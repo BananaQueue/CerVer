@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import config from './config.js';
 import { keyProvider as defaultKeyProvider } from './sealKeys.js';
 import { createPageVerifier } from './pageVerifier.js';
+import { formatFooter } from './sealCode.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(srcDir, '..', 'public');
@@ -112,6 +113,40 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     const single = await extractSinglePage(bytes, Number(req.query.k));
     reply.header('Content-Type', 'application/pdf').header('Content-Disposition', 'inline');
     return reply.send(Buffer.from(single));
+  });
+
+  // ---- What pages this document has on record ----
+  //
+  // A seal proves the page in hand belongs to the document, but it cannot tell
+  // anyone holding paper WHAT the authoritative page says. The document QR is
+  // the easy thing to scan, so it is the way in: from a control number, list
+  // every sealed page with its printed seal code and page count, so the footer
+  // line on the sheet can be checked by eye and the real page opened alongside.
+  app.get('/api/pages/:iisNo', async (req) => {
+    const iisNo = String(req.params.iisNo || '').trim();
+    const rows = db
+      .prepare(
+        `SELECT page_no, total_pages, seal, kid, sealed_pdf_path
+           FROM pages WHERE iis_no = ? ORDER BY page_no`
+      )
+      .all(iisNo);
+    return {
+      iisNo,
+      total: rows.length ? rows[0].total_pages : 0,
+      pages: rows.map((r) => ({
+        k: r.page_no,
+        n: r.total_pages,
+        seal: r.seal,
+        kid: r.kid,
+        // The footer as it is printed, built by the same function the sealer
+        // stamps with, so the two cannot drift apart. It is compared character
+        // for character against the sheet.
+        footer: formatFooter({
+          iisNo, k: r.page_no, n: r.total_pages, kid: r.kid, seal: r.seal,
+        }),
+        hasImage: !!r.sealed_pdf_path,
+      })),
+    };
   });
 
   // Serve the seal-code modules as ESM so the browser can decode a mark from

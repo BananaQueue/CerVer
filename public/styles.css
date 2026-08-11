@@ -461,8 +461,8 @@ input:focus-visible,
   .btn { transition: none; }
 }
 
-#pageVideo { width: 100%; height: 100%; object-fit: cover; display: none; }
-.viewport.live #pageVideo { display: block; }
+#pageVideo, #docVideo { width: 100%; height: 100%; object-fit: cover; display: none; }
+.viewport.live #pageVideo, .viewport.live #docVideo { display: block; }
 #markSel {
   width: 100%;
   font-family: var(--body);
@@ -502,3 +502,56 @@ input:focus-visible,
   width: 100%;
 }
 .btn-ghost:hover { border-color: var(--pine); background: rgba(11, 61, 46, 0.05); }
+
+/* ---- Pages on record (physical cross-reference) ---- */
+.pages-box {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--hair);
+}
+.pages-title {
+  margin: 0;
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.68rem;
+  color: var(--pine);
+}
+.pages-tip {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.pages-list { list-style: none; margin: 0; padding: 0; }
+.pg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px dotted var(--hair);
+}
+.pg-k {
+  flex: 0 0 auto;
+  font-family: var(--display);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: var(--pine);
+  min-width: 3.1rem;
+}
+.pg-footer {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.pg-open {
+  flex: 0 0 auto;
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.62rem;
+  color: var(--pine);
+}
+.pg-open.pg-none { color: var(--muted); }

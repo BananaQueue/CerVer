@@ -136,6 +136,51 @@ function render(data) {
     });
   const staffBtnEl = document.getElementById('staffBtn');
   if (staffBtnEl) staffBtnEl.addEventListener('click', () => verifyStaff(staffBtnEl.dataset.id));
+
+  if (genuine && idShown && idShown !== '—') showPages(idShown);
+}
+
+// ---- Pages on record ----
+//
+// Verifying the control number says the document is genuine; it says nothing
+// about the sheet in someone's hand. So once a document checks out, list what
+// its pages ARE: how many there should be, and the exact footer line printed on
+// each. That is the physical cross-reference — the officer reads the footer off
+// the paper and finds it here, and a page that was inserted has no matching
+// line and no matching page count.
+async function showPages(iisNo) {
+  let data;
+  try {
+    data = await (await fetch('/api/pages/' + encodeURIComponent(iisNo))).json();
+  } catch {
+    return;
+  }
+  if (!data.pages || !data.pages.length) return;
+
+  const rows = data.pages
+    .map(
+      (p) => `
+      <li class="pg-row">
+        <span class="pg-k">p${p.k}/${p.n}</span>
+        <code class="pg-footer">${esc(p.footer)}</code>
+        ${p.hasImage
+          ? `<a class="pg-open" href="/api/page-image?doc=${encodeURIComponent(iisNo)}&k=${p.k}" target="_blank" rel="noopener">open</a>`
+          : '<span class="pg-open pg-none">—</span>'}
+      </li>`
+    )
+    .join('');
+
+  const box = document.createElement('div');
+  box.className = 'pages-box';
+  box.innerHTML = `
+    <p class="pages-title">Pages on record — ${data.pages.length} of ${data.total}</p>
+    <p class="pages-tip">
+      Check the footer printed at the bottom of the sheet in your hand against the
+      line below. A page that does not appear here is not part of this document,
+      and a document that should have ${data.total} pages is short if you have fewer.
+    </p>
+    <ul class="pages-list">${rows}</ul>`;
+  resultEl.querySelector('.doc')?.appendChild(box);
 }
 
 async function verifyStaff(id) {
@@ -167,7 +212,7 @@ document.getElementById('samples').addEventListener('click', (e) => {
   verify(btn.dataset.id);
 });
 
-// ---- Camera scanning (html5-qrcode) ----
+// ---- Camera scanning ----
 function showCameraError(hintEl, e) {
   // html5-qrcode sometimes rejects with a plain string, not a DOMException.
   const text =
@@ -193,90 +238,145 @@ function showCameraError(hintEl, e) {
   hintEl.textContent = msg;
 }
 
-// One reusable camera controller per scan area (whole-doc QR, one-page Data Matrix).
-function createScanner({ readerId, viewportId, toggleId, hintId, formats, idleHint, liveHint, startText, onDecode }) {
-  const viewport = document.getElementById(viewportId);
-  const toggle = document.getElementById(toggleId);
-  const hint = document.getElementById(hintId);
-  let inst = null;
-  let active = false;
+// ---- Document QR scanner ----
+//
+// This ran through html5-qrcode's own camera and could not read a QR that the
+// phone's built-in camera app read instantly. Two reasons, both in how the frame
+// was captured rather than in the decoding: it never asked for a resolution, so
+// it got whatever the browser felt like — often 640x480 against the camera app's
+// full sensor — and it only examined a centred box covering 72% of the frame, so
+// a QR in the corner of a page was never looked at.
+//
+// So the frame is grabbed here instead: 1920x1080 requested, the WHOLE frame
+// offered to the decoder, and the platform's own BarcodeDetector used where it
+// exists — the same engine the camera app is using.
+const docScanner = (() => {
+  const viewport = document.getElementById('viewport');
+  const toggle = document.getElementById('scanToggle');
+  const hint = document.getElementById('scanHint');
+  const video = document.getElementById('docVideo');
+  let stream = null;
+  let raf = null;
+  let detector = null;
+  let scanFile = null;
+
+  const IDLE = 'Point the camera at the QR code in the corner of the page.';
+
+  async function ensureDecoders() {
+    if (!detector && 'BarcodeDetector' in window) {
+      try {
+        detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        detector = null;
+      }
+    }
+    if (!detector && !scanFile && window.Html5Qrcode) {
+      let host = document.getElementById('qrHost');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'qrHost';
+        host.hidden = true;
+        document.body.appendChild(host);
+      }
+      try {
+        const q = new Html5Qrcode('qrHost', {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false,
+        });
+        scanFile = async (canvas) => {
+          const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+          if (!blob) return null;
+          try {
+            return await q.scanFile(new File([blob], 'frame.png', { type: 'image/png' }), false);
+          } catch {
+            return null;
+          }
+        };
+      } catch {
+        scanFile = null;
+      }
+    }
+  }
 
   async function start() {
-    if (typeof Html5Qrcode === 'undefined') {
-      hint.textContent = 'Scanner script didn’t load — reload the page and try again.';
-      return;
-    }
-    if (!window.isSecureContext || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       hint.textContent =
-        'The camera needs a secure page. On a phone, open the https://…:3443 address (accept the certificate warning once). On this PC use http://localhost.';
+        'The camera needs a secure page. On a phone open the https://…:3443 address; on this PC use http://localhost.';
       return;
     }
-    const qrbox = (vw, vh) => {
-      const m = Math.max(160, Math.floor(Math.min(vw, vh) * 0.72));
-      return { width: m, height: m };
-    };
-    if (inst) {
-      try { await inst.clear(); } catch { /* ignore */ }
-      inst = null;
-    }
-    const opts = { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
-    if (formats && window.Html5QrcodeSupportedFormats) {
-      const f = formats.map((n) => window.Html5QrcodeSupportedFormats[n]).filter((x) => x != null);
-      if (f.length) opts.formatsToSupport = f;
-    }
-    inst = new Html5Qrcode(readerId, opts);
+    await ensureDecoders();
     hint.textContent = 'Requesting camera…';
     try {
-      await inst.start(
-        { facingMode: 'environment' },
-        { fps: 15, qrbox, aspectRatio: 1.0 },
-        (text) => {
-          stop();
-          onDecode(text);
-        },
-        () => {}
-      );
-      active = true;
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      video.srcObject = stream;
+      await video.play();
       viewport.classList.add('live');
       toggle.textContent = 'Stop camera';
-      hint.textContent = liveHint;
+      hint.textContent = 'Hold the QR in view — anywhere in frame is fine.';
+      loop();
     } catch (err) {
-      try { await inst.clear(); } catch { /* ignore */ }
-      inst = null;
       showCameraError(hint, err);
+      stop();
     }
   }
 
-  async function stop() {
-    if (inst && active) {
-      try { await inst.stop(); } catch { /* ignore */ }
-      try { await inst.clear(); } catch { /* ignore */ }
-    }
-    active = false;
-    inst = null;
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
     viewport.classList.remove('live');
-    toggle.textContent = startText;
-    hint.textContent = idleHint;
+    toggle.textContent = 'Start camera';
+    hint.textContent = IDLE;
   }
 
-  toggle.addEventListener('click', () => (active ? stop() : start()));
-  return { start, stop, isActive: () => active };
-}
+  function loop() {
+    const cv = document.createElement('canvas');
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    let busy = false;
+    let lastSlow = 0;
+    const tick = async () => {
+      if (!stream) return;
+      if (!busy && video.videoWidth) {
+        busy = true;
+        try {
+          // The whole frame, scaled so the long side is at most 1280 — enough
+          // for the QR's modules, and nothing cropped away.
+          const scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+          cv.width = Math.round(video.videoWidth * scale);
+          cv.height = Math.round(video.videoHeight * scale);
+          cx.drawImage(video, 0, 0, cv.width, cv.height);
 
-const docScanner = createScanner({
-  readerId: 'reader',
-  viewportId: 'viewport',
-  toggleId: 'scanToggle',
-  hintId: 'scanHint',
-  formats: ['QR_CODE'],
-  idleHint: 'Point the camera at the QR code in the corner of the page.',
-  liveHint: 'Fill the box with the QR and hold steady — get close, it’s small.',
-  startText: 'Start camera',
-  onDecode: (text) => {
+          if (detector) {
+            const found = await detector.detect(cv);
+            if (found && found.length) { stop(); onDecode(found[0].rawValue); return; }
+          } else if (scanFile && Date.now() - lastSlow > 400) {
+            lastSlow = Date.now();
+            const text = await scanFile(cv);
+            if (text) { stop(); onDecode(text); return; }
+          }
+        } catch {
+          /* keep scanning */
+        }
+        busy = false;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function onDecode(text) {
     idInput.value = text;
     verify(text);
-  },
-});
+  }
+
+  toggle.addEventListener('click', () => (stream ? stop() : start()));
+  return { start, stop, isActive: () => !!stream };
+})();
 
 // ---- One-page scanner: reads the EMB seal code AND the Data Matrix ----
 //
