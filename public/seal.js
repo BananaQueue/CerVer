@@ -26,10 +26,8 @@ document.getElementById('sealForm').addEventListener('submit', async (e) => {
   if (!file) return card('var(--stamp-amber)', 'Wait', 'Missing', 'No file', iisNo, 'Choose the signed PDF to seal.');
 
   card('var(--stamp-slate)', '…', 'Working', 'Sealing', iisNo, 'Stamping and recording every page…');
-  const mark = document.getElementById('markSel')?.value || 'datamatrix';
   const fd = new FormData();
   fd.append('iisNo', iisNo);
-  fd.append('mark', mark);
   fd.append('file', file, file.name);
   try {
     const res = await fetch('/api/seal', { method: 'POST', body: fd });

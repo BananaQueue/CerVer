@@ -53,28 +53,39 @@ seals each page instead:
 seal_k = base32( HMAC-SHA256( secret[kid], IIS_No ‖ k ‖ n ‖ SHA256(page text) ) )[0:8]
 ```
 
-In the lower-right corner of each page it prints a **Data Matrix** (encoding
-`CVR|iisNo|k|seal`) with the human-readable seal line beneath it:
-`EMB · R1-2026-010734 · p3/7 · K1 · 7F2A-9C41`. The secret is server-only, so the
+In the lower-right corner of each page it prints the **EMB seal code** — the
+DENR/EMB logo pixelated to a 44×44 grid, carrying `CVR|iisNo|k|seal` in which
+tiles keep their ink — with the human-readable seal line beneath it:
+`EMB · R1-2026-010734 · p3/7 · K1 · TQQ3-MTBT`. The secret is server-only, so the
 seal is unforgeable; it binds the document, the page position, and the page
 content.
+
+The mark is **18 mm** (0.41 mm per tile). That is not a guess: the size was
+settled by printing a calibration sheet on an office inkjet and photographing
+each rung until one failed. 18 mm was the smallest printed and it read.
 
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
 page) → it stamps every page and records each page's digest → the downloaded
 sealed PDF is the copy that gets printed.
 
-**Verification, three ways:**
-- **Whole document** — QR / control-number lookup (transaction verification).
-- **One page** — scan the page's Data Matrix with the camera (or type control
-  number + page + seal) → confirms the seal is authentic for page k of n. Staff
-  can then open the authoritative page to compare content.
+**Verification.** Document-level checking is *not* CerVer's job — the QR already
+on EMB documents does that, read by the phone's own camera, and it resolves to
+the office's `iis.emb.gov.ph` page. CerVer covers the part that QR cannot:
+
+- **One page** — scan the seal with the camera (or type control number + page +
+  seal) → confirms the seal is authentic for page k of n, then shows the
+  authoritative page beside it to compare the wording.
 - **Full check** — upload the PDF → a page-by-page report that names exactly which
   pages were altered / inserted / removed / reordered (exact re-hash; no OCR).
 
-Honest limit: from a printed page + phone photo, content edits can't be
-auto-detected (OCR ≠ exact bytes) — detection there is authenticated
-authoritative-content display + human comparison. The **Full check** (digital
-PDF) path re-hashes exactly and is fully automatic.
+Honest limit, and the reason the comparison view exists: **a valid seal read off
+paper does not prove the words on that paper.** Verifying from a printed page
+compares the printed seal against the registry; it cannot recompute the content
+hash, because paper cannot be hashed. So the seal catches a page taken from
+another document, a page in the wrong position, and a missing page — but not
+retyped text. That is caught either by **Full check** on the digital PDF (exact,
+automatic) or by a human comparing against the authoritative page the app
+displays.
 
 ### Seal key management
 

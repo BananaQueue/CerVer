@@ -1,5 +1,5 @@
 // Render the sealed print test in a real browser and read every mark off the
-// page: the document QR, the Data Matrix, and the EMB seal. Proves what a
+// page: the document QR and the EMB seal. Proves what a
 // scanner would get from the printed sheet, short of the print itself.
 //
 //   node scripts/check-marks.mjs [pdf]
@@ -64,16 +64,15 @@ try {
       return out;
     };
 
-    const SEAL = (22 / 25.4) * 72;
+    const SEAL = (18 / 25.4) * 72; // must track SEALCODE_MM in src/sealer.js
     const out = [];
     for (let p = 1; p <= 3; p++) {
       const cv = await window.__renderPage(bytes, p, 4);
-      const sealCv = crop(cv, 595 - 84 - SEAL, 842 - 34 - SEAL, SEAL, SEAL, 8);
+      const sealCv = crop(cv, 595 - 26 - SEAL, 842 - 34 - SEAL, SEAL, SEAL, 8);
       const sx = sealCv.getContext('2d', { willReadFrequently: true });
       out.push({
         page: p,
         qr: await readCode(crop(cv, 595 - 56 - 62, 842 - 786, 62, 62, 8), 'QR_CODE'),
-        dataMatrix: await readCode(crop(cv, 595 - 30 - 42, 842 - 82, 42, 42, 6), 'DATA_MATRIX'),
         seal: dec.inspect(sx.getImageData(0, 0, sealCv.width, sealCv.height)).payload,
       });
     }
@@ -82,7 +81,7 @@ try {
 
   let bad = 0;
   for (const r of results) {
-    for (const k of ['qr', 'dataMatrix', 'seal']) {
+    for (const k of ['qr', 'seal']) {
       if (!r[k]) bad++;
       console.log(`page ${r.page}  ${k.padEnd(11)} ${r[k] ? r[k] : '*** UNREADABLE ***'}`);
     }

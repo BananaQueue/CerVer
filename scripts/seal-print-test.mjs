@@ -1,4 +1,4 @@
-// Seal scripts/print-test.pdf with BOTH marks and record the pages, so a printed
+// Seal scripts/print-test.pdf and record the pages, so a printed
 // copy can be scanned against the live server.
 //
 //   node scripts/seal-print-test.mjs
@@ -20,7 +20,6 @@ const { sealedBytes, kid, pages } = await sealPdf(db, {
   pdfBytes: await readFile(IN),
   keyProvider: keyProvider(),
   sealedPdfPath: OUT,
-  mark: 'both',
 });
 await writeFile(OUT, sealedBytes);
 

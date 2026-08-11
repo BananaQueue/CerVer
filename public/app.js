@@ -203,8 +203,6 @@ const pageScanner = (() => {
   let stream = null;
   let raf = null;
   let sealInspect = null;
-  let detector = null;
-  let scanDm = null;
   let lastFrame = null; // most recent capture, for "save this frame"
   let lastInfo = null;
 
@@ -215,42 +213,6 @@ const pageScanner = (() => {
       } catch (e) {
         console.error('seal-code decoder failed to load', e);
         diagLine.textContent = 'decoder module failed to load — ' + e;
-      }
-    }
-    if (!detector && 'BarcodeDetector' in window) {
-      try {
-        detector = new window.BarcodeDetector({ formats: ['data_matrix', 'qr_code'] });
-      } catch {
-        detector = null;
-      }
-    }
-    if (!detector && !scanDm && window.Html5Qrcode) {
-      let host = document.getElementById('dmHost');
-      if (!host) {
-        host = document.createElement('div');
-        host.id = 'dmHost';
-        host.hidden = true;
-        document.body.appendChild(host);
-      }
-      try {
-        const q = new Html5Qrcode('dmHost', {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.DATA_MATRIX,
-            Html5QrcodeSupportedFormats.QR_CODE,
-          ],
-          verbose: false,
-        });
-        scanDm = async (canvas) => {
-          const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-          if (!blob) return null;
-          try {
-            return await q.scanFile(new File([blob], 'frame.png', { type: 'image/png' }), false);
-          } catch {
-            return null; // nothing in this frame
-          }
-        };
-      } catch {
-        scanDm = null;
       }
     }
   }
@@ -345,7 +307,6 @@ const pageScanner = (() => {
     const cv = document.createElement('canvas');
     const cx = cv.getContext('2d', { willReadFrequently: true });
     let busy = false;
-    let lastDm = 0;
     const tick = async () => {
       if (!stream) return;
       if (!busy && video.videoWidth) {
@@ -370,14 +331,6 @@ const pageScanner = (() => {
             lastInfo = info;
             report(info);
             if (info.payload) { stop(); handlePagePayload(info.payload); return; }
-          }
-          if (detector) {
-            const found = await detector.detect(cv);
-            if (found && found.length) { stop(); handlePagePayload(found[0].rawValue); return; }
-          } else if (scanDm && Date.now() - lastDm > 500) {
-            lastDm = Date.now();
-            const text = await scanDm(cv);
-            if (text) { stop(); handlePagePayload(text); return; }
           }
         } catch {
           /* keep scanning */

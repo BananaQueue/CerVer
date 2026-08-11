@@ -68,8 +68,6 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     if (!iisNo) return reply.code(400).send({ error: 'iisNo is required.' });
 
     const pdfBytes = await data.toBuffer();
-    const requested = (data.fields?.mark?.value || 'datamatrix').trim();
-    const mark = ['datamatrix', 'sealcode', 'both'].includes(requested) ? requested : 'datamatrix';
     const { sealPdf } = await import('./sealer.js');
     await fs.mkdir(sealDir, { recursive: true });
     const sealedPath = path.join(sealDir, `${safeName(iisNo)}.pdf`);
@@ -78,15 +76,13 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
       pdfBytes,
       keyProvider: keys,
       sealedPdfPath: sealedPath,
-      mark,
     });
     await fs.writeFile(sealedPath, sealedBytes);
 
     reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="sealed-${safeName(iisNo)}.pdf"`)
-      .header('X-Sealed-Pages', String(pages.length))
-      .header('X-Sealed-Mark', mark);
+      .header('X-Sealed-Pages', String(pages.length));
     return reply.send(Buffer.from(sealedBytes));
   });
 

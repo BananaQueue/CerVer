@@ -1,30 +1,18 @@
 import { PDFDocument, StandardFonts, PDFName, rgb, degrees } from 'pdf-lib';
 import { extractPageTexts } from './pdfTools.js';
 import { canonicalize, digestPage, computeSeal, formatFooter, payloadFor } from './sealCode.js';
-import { dataMatrixPng } from './barcode.js';
 
 const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
-
-// Draw the scannable Data Matrix (encoding CVR|iisNo|k|seal) in the lower-right
-// corner, above the human-readable seal line. The camera reads this to verify.
-async function drawDataMatrix(pdf, pg, payload) {
-  const png = await dataMatrixPng(payload, { scale: 5 });
-  const img = await pdf.embedPng(png);
-  const size = 42; // pt, ~1.5 cm
-  const margin = 30;
-  const x = pg.getWidth() - margin - size;
-  const y = 40; // sits above the seal line (baseline y=26)
-  pg.drawImage(img, { x, y, width: size, height: size });
-}
 
 // The EMB seal code: the DENR/EMB logo pixelated to a 44x44 tile grid, with the
 // payload carried by clearing interior tiles. Drawn as vector rectangles rather
 // than an embedded raster so it stays crisp at any print resolution.
 //
-// 22 mm is the chosen size: at 44 tiles that is a 0.5 mm tile, comfortably above
-// the 0.34 mm modules the Data Matrix already scans at on these pages, and the
-// smallest size at which the seal still reads as the seal.
-const SEALCODE_MM = 22;
+// 18 mm — 0.41 mm per tile — is where the calibration sheet settled. It printed
+// on an office inkjet and read back off the paper, which is the only test that
+// counts; the larger rungs were never needed. It also carries the mark itself at
+// a size that reads as the EMB seal rather than as a machine code.
+const SEALCODE_MM = 18;
 
 async function drawSealCode(pg, payload, { mm = SEALCODE_MM, margin = 26 } = {}) {
   const { tilesFor, SIZE } = await import('./sealcode/encode.js');
@@ -88,10 +76,7 @@ const UPSERT_SQL = `
  * Seal a signed PDF: stamp a per-page footer code and record each page's digest.
  * @returns {Promise<{ sealedBytes: Uint8Array, kid: string, pages: Array }>}
  */
-export async function sealPdf(
-  db,
-  { iisNo, pdfBytes, keyProvider, sealedPdfPath = null, mark = 'datamatrix' }
-) {
+export async function sealPdf(db, { iisNo, pdfBytes, keyProvider, sealedPdfPath = null }) {
   const kid = keyProvider.currentKid();
   const secret = keyProvider.secretFor(kid);
 
@@ -113,16 +98,8 @@ export async function sealPdf(
     const footer = formatFooter({ iisNo, k, n, kid, seal });
 
     const pg = pdfPages[i];
-    const payload = payloadFor({ iisNo, k, seal });
-    if (mark === 'datamatrix' || mark === 'both') {
-      await drawDataMatrix(src, pg, payload);
-    }
-    if (mark === 'sealcode' || mark === 'both') {
-      // With both marks the Data Matrix keeps the corner, so the seal shifts
-      // left to sit beside it rather than on top of it.
-      await drawSealCode(pg, payload, { margin: mark === 'both' ? 84 : 26 });
-    }
-    // Human-readable seal line under the Data Matrix, right-aligned to the margin.
+    await drawSealCode(pg, payloadFor({ iisNo, k, seal }));
+    // Human-readable seal line under the mark, right-aligned to the margin.
     const size = 6;
     const w = font.widthOfTextAtSize(footer, size);
     const x = Math.max(20, pg.getWidth() - 30 - w);
