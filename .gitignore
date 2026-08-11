@@ -28,3 +28,6 @@ scripts/tile-code.png
 scripts/tiles2.png
 scripts/onpage.png
 scripts/sc.*
+
+# diagnostic camera frames
+frames/

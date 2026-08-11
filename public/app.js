@@ -293,18 +293,24 @@ const pageScanner = (() => {
   const toggle = document.getElementById('scanToggle2');
   const hint = document.getElementById('scanHint2');
   const video = document.getElementById('pageVideo');
+  const diag = document.getElementById('pageDiag');
+  const diagLine = document.getElementById('diagLine');
+  const saveBtn = document.getElementById('saveFrame');
   let stream = null;
   let raf = null;
-  let sealDecode = null;
+  let sealInspect = null;
   let detector = null;
   let scanDm = null;
+  let lastFrame = null; // most recent capture, for "save this frame"
+  let lastInfo = null;
 
   async function ensureDecoders() {
-    if (!sealDecode) {
+    if (!sealInspect) {
       try {
-        ({ decode: sealDecode } = await import('/sealcode/decode.js'));
+        ({ inspect: sealInspect } = await import('/sealcode/decode.js'));
       } catch (e) {
         console.error('seal-code decoder failed to load', e);
+        diagLine.textContent = 'decoder module failed to load — ' + e;
       }
     }
     if (!detector && 'BarcodeDetector' in window) {
@@ -363,6 +369,7 @@ const pageScanner = (() => {
       viewport.classList.add('live');
       toggle.textContent = 'Stop camera';
       hint.textContent = 'Fill the frame with the seal and hold steady.';
+      diag.hidden = false;
       loop();
     } catch (err) {
       showCameraError(hint, err);
@@ -380,6 +387,55 @@ const pageScanner = (() => {
     toggle.textContent = 'Scan seal code';
     hint.textContent = 'Point at the seal in the page’s lower-right corner.';
   }
+
+  // Turn the decoder's diagnostics into something aimable.
+  //
+  // The two ways a scan fails look identical to the user — nothing happens — but
+  // they need opposite corrections. Too few pixels per tile means move closer;
+  // a good pitch with a poor fixed-tile score means the mark is found but the
+  // reading is wrong (blur, glare, or something else dark dragged into its
+  // bounding box), so the fix is to isolate the seal, not to approach it.
+  const MIN_PITCH = 3; // px per tile below which detail is simply not there
+  function report(info) {
+    if (!info) return;
+    const pitch = info.pitch || 0;
+    const score = info.score || 0;
+    let cls, msg;
+    if (score >= 0.86) {
+      cls = 'good'; msg = 'reading…';
+    } else if (pitch < MIN_PITCH) {
+      cls = 'bad'; msg = 'too far — move closer until the seal fills the frame';
+    } else if (score >= 0.6) {
+      cls = 'warn'; msg = 'seal found, reading is noisy — steady, more light, less glare';
+    } else {
+      cls = 'bad'; msg = 'no seal locked on — centre it, and keep other dark marks out of frame';
+    }
+    diagLine.innerHTML =
+      `px/tile <b>${pitch.toFixed(1)}</b>   match <b>${(score * 100).toFixed(0)}%</b>   ` +
+      `angle <b>${info.deg || 0}°</b>\n<span class="${cls}">${msg}</span>`;
+  }
+
+  // Ship a failing frame to the server so the decoder can be worked on against
+  // the real image rather than a guess about what the camera saw.
+  saveBtn?.addEventListener('click', async () => {
+    if (!lastFrame) { diagLine.textContent = 'no frame captured yet'; return; }
+    saveBtn.disabled = true;
+    const prev = saveBtn.textContent;
+    saveBtn.textContent = 'Saving…';
+    try {
+      const dataUrl = lastFrame.toDataURL('image/png');
+      const r = await fetch('/api/frame', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataUrl, info: lastInfo, ua: navigator.userAgent }),
+      });
+      const j = await r.json();
+      saveBtn.textContent = r.ok ? `Saved ${j.file}` : `Failed: ${j.error || r.status}`;
+    } catch (e) {
+      saveBtn.textContent = 'Failed: ' + e.message;
+    }
+    setTimeout(() => { saveBtn.textContent = prev; saveBtn.disabled = false; }, 2500);
+  });
 
   function loop() {
     const cv = document.createElement('canvas');
@@ -404,9 +460,12 @@ const pageScanner = (() => {
             0, 0, px, px
           );
 
-          if (sealDecode) {
-            const got = sealDecode(cx.getImageData(0, 0, px, px));
-            if (got) { stop(); handlePagePayload(got); return; }
+          if (sealInspect) {
+            const info = sealInspect(cx.getImageData(0, 0, px, px));
+            lastFrame = cv; // live canvas — encoded only if the user asks to save
+            lastInfo = info;
+            report(info);
+            if (info.payload) { stop(); handlePagePayload(info.payload); return; }
           }
           if (detector) {
             const found = await detector.detect(cv);

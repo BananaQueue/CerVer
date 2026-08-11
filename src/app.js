@@ -136,6 +136,36 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     }
   });
 
+  // ---- Diagnostic frame capture ----
+  //
+  // A scan that fails on paper looks the same from the outside as one that fails
+  // for a completely different reason, and the phone doing the scanning is not
+  // the machine the decoder is worked on. This lets a failing frame be kept, so
+  // the decoder can be tested against the image the camera actually saw.
+  //
+  // Off unless CERVER_FRAME_CAPTURE=1 — it writes files to disk on request.
+  app.post('/api/frame', async (req, reply) => {
+    if (process.env.CERVER_FRAME_CAPTURE !== '1') {
+      return reply.code(404).send({ error: 'Frame capture is off.' });
+    }
+    const { image, info, ua } = req.body || {};
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
+    if (!m) return reply.code(400).send({ error: 'Expected a PNG data URL.' });
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length > 8 * 1024 * 1024) return reply.code(413).send({ error: 'Frame too large.' });
+
+    const dir = path.join(srcDir, '..', 'frames');
+    await fs.mkdir(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = `frame-${stamp}.png`;
+    await fs.writeFile(path.join(dir, file), buf);
+    await fs.writeFile(
+      path.join(dir, `frame-${stamp}.json`),
+      JSON.stringify({ info: info ?? null, ua: ua ?? null, bytes: buf.length }, null, 2)
+    );
+    return { file, bytes: buf.length };
+  });
+
   app.register(fastifyStatic, { root: publicDir, prefix: '/' });
 
   return app;

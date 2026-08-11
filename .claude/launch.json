@@ -5,7 +5,10 @@
       "name": "cerver",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
-      "port": 3100
+      "port": 3100,
+      "env": {
+        "CERVER_FRAME_CAPTURE": "1"
+      }
     }
   ]
 }

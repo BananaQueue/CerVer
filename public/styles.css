@@ -474,3 +474,31 @@ input:focus-visible,
   color: var(--ink);
   margin-bottom: 0.9rem;
 }
+
+/* ---- Scanner diagnostics ---- */
+.diag {
+  text-align: left;
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px dashed var(--hair);
+  border-radius: 2px;
+  background: var(--card);
+}
+.diag-line {
+  margin: 0 0 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+.diag-line .good { color: var(--stamp-green); }
+.diag-line .warn { color: var(--stamp-amber); }
+.diag-line .bad { color: var(--stamp-red); }
+.btn-ghost {
+  background: transparent;
+  color: var(--pine);
+  border: 1px solid var(--hair);
+  width: 100%;
+}
+.btn-ghost:hover { border-color: var(--pine); background: rgba(11, 61, 46, 0.05); }
