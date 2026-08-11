@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CerVer — Send a Capture</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%230b3d2e'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .shot-preview {
+        width: 100%;
+        border: 1px solid var(--hair);
+        border-radius: 3px;
+        background: var(--pine-deep);
+        display: none;
+        margin-top: 0.9rem;
+      }
+      .shot-preview.has { display: block; }
+      .drop {
+        border: 2px dashed var(--hair);
+        border-radius: 3px;
+        padding: 1.6rem 1rem;
+        text-align: center;
+        color: var(--muted);
+        background: var(--card);
+      }
+      .drop.over { border-color: var(--pine); background: rgba(11, 61, 46, 0.06); }
+      .sent-list { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+      .sent-list li {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding: 0.3rem 0;
+        border-bottom: 1px dotted var(--hair);
+        display: flex;
+        justify-content: space-between;
+        gap: 0.6rem;
+      }
+      .sent-list .kb { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <div class="crest" aria-hidden="true">EMB</div>
+        <div class="masthead-text">
+          <p class="eyebrow">Environmental Management Bureau · Region I</p>
+          <p class="office">Send a Capture</p>
+        </div>
+      </header>
+
+      <main>
+        <div class="intro">
+          <h1>Send a photo or screenshot.</h1>
+          <p class="lede">
+            Pick a shot of the seal from this phone. It is read here first, so you
+            see the verdict straight away, then kept on the office machine.
+          </p>
+        </div>
+
+        <label class="drop" id="drop" for="shotFile">
+          <strong>Tap to choose a photo</strong><br />
+          camera roll, screenshot, or take a new one
+        </label>
+        <input id="shotFile" type="file" accept="image/*" hidden />
+
+        <canvas class="shot-preview" id="preview"></canvas>
+
+        <div class="diag" id="verdictBox" hidden>
+          <p class="diag-line" id="verdict">—</p>
+        </div>
+
+        <label class="field-label" for="note" style="margin-top: 0.9rem">Note (optional)</label>
+        <input id="note" type="text" spellcheck="false" placeholder="e.g. 22 mm mark, office light" />
+
+        <button class="btn btn-primary" id="sendBtn" type="button" disabled style="width: 100%; margin-top: 0.9rem">
+          Send to the office machine
+        </button>
+        <p class="scan-hint" id="status">Nothing chosen yet.</p>
+
+        <div class="rule"><span>sent so far</span></div>
+        <ul class="sent-list" id="sentList">
+          <li><span>loading…</span></li>
+        </ul>
+      </main>
+
+      <footer class="colophon">
+        <p><a href="/">← Back to verification</a></p>
+        <p>Captures are kept only on the office machine, to work on the reader.</p>
+      </footer>
+    </div>
+
+    <script type="module">
+      const { inspect } = await import('/sealcode/decode.js');
+
+      const fileInput = document.getElementById('shotFile');
+      const drop = document.getElementById('drop');
+      const preview = document.getElementById('preview');
+      const verdictBox = document.getElementById('verdictBox');
+      const verdict = document.getElementById('verdict');
+      const sendBtn = document.getElementById('sendBtn');
+      const status = document.getElementById('status');
+      const note = document.getElementById('note');
+      const sentList = document.getElementById('sentList');
+
+      let chosen = null;
+      let lastVerdict = '';
+
+      // A phone photo is far bigger than the decoder wants, and the seal is
+      // usually a small part of it. Rather than demand a perfect framing, try
+      // the whole shot and then progressively tighter centre crops — the same
+      // thing the user would do by stepping closer — and keep the best read.
+      const WINDOWS = [1, 0.6, 0.35, 0.2];
+      const WORK = 900;
+
+      async function examine(file) {
+        const bitmap = await createImageBitmap(file);
+        const cv = document.createElement('canvas');
+        const cx = cv.getContext('2d', { willReadFrequently: true });
+        let best = { score: 0, payload: null, pitch: 0, frac: 1 };
+
+        for (const frac of WINDOWS) {
+          const side = Math.min(bitmap.width, bitmap.height) * frac;
+          const px = Math.min(WORK, Math.round(side));
+          cv.width = px;
+          cv.height = px;
+          cx.fillStyle = '#fff';
+          cx.fillRect(0, 0, px, px);
+          cx.drawImage(
+            bitmap,
+            (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side,
+            0, 0, px, px
+          );
+          const info = inspect(cx.getImageData(0, 0, px, px));
+          if (info.score > best.score) best = { ...info, frac };
+          if (info.payload) break;
+        }
+
+        // Show the crop that read best, so the framing that worked is visible.
+        const side = Math.min(bitmap.width, bitmap.height) * best.frac;
+        const px = Math.min(WORK, Math.round(side));
+        preview.width = px;
+        preview.height = px;
+        const pcx = preview.getContext('2d');
+        pcx.fillStyle = '#fff';
+        pcx.fillRect(0, 0, px, px);
+        pcx.drawImage(
+          bitmap,
+          (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side,
+          0, 0, px, px
+        );
+        preview.classList.add('has');
+
+        return { ...best, w: bitmap.width, h: bitmap.height };
+      }
+
+      function describe(r) {
+        const px = `${r.w}×${r.h}`;
+        if (r.payload) {
+          lastVerdict = `READ ${r.payload}`;
+          return `<span class="good">Read it.</span>\n${r.payload}\nphoto ${px} · ${r.pitch.toFixed(1)} px per tile`;
+        }
+        const pct = (r.score * 100).toFixed(0);
+        lastVerdict = `no read, score ${pct}%, pitch ${r.pitch.toFixed(1)}`;
+        if (r.score >= 0.45)
+          return `<span class="warn">Seal found but not clean — ${pct}% match.</span>\nBlur or glare is the likely cause.\nphoto ${px} · ${r.pitch.toFixed(1)} px per tile`;
+        if (r.pitch < 3)
+          return `<span class="bad">Seal too small in the shot — ${pct}% match.</span>\nGet closer so it fills more of the frame.\nphoto ${px} · ${r.pitch.toFixed(1)} px per tile`;
+        return `<span class="bad">No seal found — ${pct}% match.</span>\nCentre the seal and keep other dark marks out of shot.\nphoto ${px} · ${r.pitch.toFixed(1)} px per tile`;
+      }
+
+      async function choose(file) {
+        if (!file) return;
+        chosen = file;
+        sendBtn.disabled = true;
+        status.textContent = 'Reading…';
+        verdictBox.hidden = false;
+        verdict.textContent = 'reading…';
+        try {
+          verdict.innerHTML = describe(await examine(file));
+        } catch (e) {
+          lastVerdict = 'examine failed: ' + e.message;
+          verdict.innerHTML = `<span class="bad">Couldn’t read that file.</span>\n${e.message}`;
+        }
+        sendBtn.disabled = false;
+        status.textContent = `${file.name || 'capture'} · ${(file.size / 1024).toFixed(0)} KB — ready to send.`;
+      }
+
+      fileInput.addEventListener('change', () => choose(fileInput.files[0]));
+      drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        drop.classList.remove('over');
+        choose(e.dataTransfer.files[0]);
+      });
+      // Screenshots are usually on the clipboard, not in a file.
+      window.addEventListener('paste', (e) => {
+        const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+        if (item) choose(item.getAsFile());
+      });
+
+      sendBtn.addEventListener('click', async () => {
+        if (!chosen) return;
+        sendBtn.disabled = true;
+        status.textContent = 'Sending…';
+        try {
+          const fd = new FormData();
+          fd.append('note', note.value || '');
+          fd.append('verdict', lastVerdict);
+          fd.append('file', chosen, chosen.name || 'capture.png');
+          const r = await fetch('/api/upload', { method: 'POST', body: fd });
+          const j = await r.json();
+          status.textContent = r.ok
+            ? `Sent as ${j.file} (${(j.bytes / 1024).toFixed(0)} KB).`
+            : `Failed: ${j.error || r.status}`;
+          if (r.ok) refresh();
+        } catch (e) {
+          status.textContent = 'Failed: ' + e.message;
+        }
+        sendBtn.disabled = false;
+      });
+
+      async function refresh() {
+        try {
+          const { frames } = await (await fetch('/api/frames')).json();
+          sentList.innerHTML = frames.length
+            ? frames
+                .map(
+                  (f) =>
+                    `<li><span>${f.file}</span><span class="kb">${(f.bytes / 1024).toFixed(0)} KB</span></li>`
+                )
+                .join('')
+            : '<li><span>nothing sent yet</span></li>';
+        } catch {
+          sentList.innerHTML = '<li><span>couldn’t list captures</span></li>';
+        }
+      }
+      refresh();
+    </script>
+  </body>
+</html>
