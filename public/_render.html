@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>CerVer — page render harness (dev)</title></head>
+  <body>
+    <!-- Dev-only. Renders a PDF page to a canvas so the marks on it can be read
+         with the same decoders the app uses. Driven by scripts/check-marks.mjs. -->
+    <script src="/vendor/html5-qrcode.min.js"></script>
+    <script type="module">
+      import * as pdfjs from '/vendor/pdfjs/pdf.min.mjs';
+      pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+      // Takes the PDF bytes directly, so nothing has to be served for it.
+      window.__renderPage = async (bytes, pageNo, scale) => {
+        const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes) }).promise;
+        const pg = await doc.getPage(pageNo);
+        const vp = pg.getViewport({ scale });
+        const cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        return cv;
+      };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

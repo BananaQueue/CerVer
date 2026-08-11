@@ -10,10 +10,17 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import bwipjs from 'bwip-js';
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'print-test.pdf');
 const PINE = rgb(0.043, 0.239, 0.18);
 const IIS_NO = 'R1-2026-010734';
+
+// Real EMB documents carry a QR that opens a verification page, and the whole
+// design rests on the pair: the QR identifies the DOCUMENT, the seal proves the
+// PAGE belongs to it. A test document without the QR only exercises half of it —
+// and reads as a broken scanner to anyone pointing a plain QR reader at it.
+const QR_URL = `https://iis.emb.gov.ph/verify?id=${IIS_NO}`;
 
 const PAGES = [
   {
@@ -92,7 +99,10 @@ const body = await doc.embedFont(StandardFonts.Helvetica);
 const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 const small = await doc.embedFont(StandardFonts.Helvetica);
 
-PAGES.forEach(({ heading, lines }, i) => {
+const qrPng = await bwipjs.toBuffer({ bcid: 'qrcode', text: QR_URL, scale: 6 });
+const qr = await doc.embedPng(qrPng);
+
+for (const [i, { heading, lines }] of PAGES.entries()) {
   const p = doc.addPage([595, 842]); // A4
   const m = 56;
 
@@ -108,6 +118,10 @@ PAGES.forEach(({ heading, lines }, i) => {
     start: { x: m, y: 754 }, end: { x: 595 - m, y: 754 },
     thickness: 1.2, color: PINE,
   });
+
+  // The document QR, upper right — where EMB puts it.
+  const qrSize = 62; // pt, ~22 mm
+  p.drawImage(qr, { x: 595 - m - qrSize, y: 786 - qrSize, width: qrSize, height: qrSize });
 
   p.drawText(heading, { x: m, y: 718, size: 12, font: bold });
   p.drawText(`Control No. ${IIS_NO}`, { x: m, y: 702, size: 9, font: small, color: PINE });
@@ -127,7 +141,7 @@ PAGES.forEach(({ heading, lines }, i) => {
   p.drawText('Government Center, Sevilla, San Fernando City, La Union 2500', {
     x: m, y: 36, size: 7, font: small, color: rgb(0.4, 0.44, 0.41),
   });
-});
+}
 
 await writeFile(OUT, await doc.save());
 console.log(`wrote ${OUT} — ${PAGES.length} pages, control no. ${IIS_NO}`);

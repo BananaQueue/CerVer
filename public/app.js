@@ -401,14 +401,14 @@ const pageScanner = (() => {
     const pitch = info.pitch || 0;
     const score = info.score || 0;
     let cls, msg;
-    if (score >= 0.86) {
+    if (score >= 0.72) {
       cls = 'good'; msg = 'reading…';
+    } else if (score >= 0.45) {
+      cls = 'warn'; msg = 'seal found but not clean — hold steady, more light, less glare';
     } else if (pitch < MIN_PITCH) {
-      cls = 'bad'; msg = 'too far — move closer until the seal fills the frame';
-    } else if (score >= 0.6) {
-      cls = 'warn'; msg = 'seal found, reading is noisy — steady, more light, less glare';
+      cls = 'bad'; msg = 'nothing yet — move closer until the seal fills the frame';
     } else {
-      cls = 'bad'; msg = 'no seal locked on — centre it, and keep other dark marks out of frame';
+      cls = 'bad'; msg = 'no seal in view — centre it, and keep other dark marks out of frame';
     }
     diagLine.innerHTML =
       `px/tile <b>${pitch.toFixed(1)}</b>   match <b>${(score * 100).toFixed(0)}%</b>   ` +

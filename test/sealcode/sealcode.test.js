@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { N, GRID, CARRIERS, FIXED } from '../../src/sealcode/baseline.js';
 import { tilesFor, payloadFromTiles, rasterize, renderSvg, baselineTiles } from '../../src/sealcode/encode.js';
-import { decode } from '../../src/sealcode/decode.js';
+import { decode, inspect } from '../../src/sealcode/decode.js';
 
 const P1 = 'CVR|R1-2026-010734|1|PP64-QXA6';
 const P2 = 'CVR|R1-2025-023099|7|BDIN-YZNT';
@@ -87,6 +87,52 @@ test('rejects things that are not an EMB seal', () => {
   assert.equal(decode(solid(300, 300, (a, w) => {
     for (let y = 80; y < 220; y++) for (let x = 80; x < 220; x++) { const o = (y*w+x)*4; a[o]=a[o+1]=a[o+2]=0; }
   })), null, 'solid square');
+});
+
+test('the reported match separates a real seal from bare paper', () => {
+  // 72.7% of the fixed tiles are expected to be BARE, so a score that merely
+  // counts agreements hands any mostly-white frame ~0.73 for free. A camera
+  // pointed at blank paper never returns a PURE white frame — there is always
+  // some incidental ink in view — so it clears that bar and the scanner reports
+  // a seal that is not there. The match must run 0 (nothing) to 1 (a seal).
+  const ink = (a, w, x0, y0, x1, y1) => {
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) { const o = (y * w + x) * 4; a[o] = a[o+1] = a[o+2] = 0; }
+  };
+  // What a camera pointed at an unsealed part of a page actually sends.
+  const paper = {
+    'a line of text': solid(300, 300, (a, w) => {
+      for (let i = 0; i < 14; i++) ink(a, w, 40 + i * 16, 150, 49 + i * 16, 162);
+    }),
+    'a footer rule': solid(300, 300, (a, w) => ink(a, w, 30, 150, 270, 152)),
+    'a few smudges': solid(300, 300, (a, w) => {
+      ink(a, w, 60, 60, 75, 72); ink(a, w, 180, 200, 205, 214); ink(a, w, 120, 90, 131, 99);
+    }),
+  };
+  for (const [what, img] of Object.entries(paper)) {
+    const r = inspect(img);
+    assert.equal(r.payload, null, `${what} decoded to something`);
+    assert.ok(r.score < 0.3, `${what} scored ${r.score.toFixed(3)}, expected near 0`);
+  }
+
+  // Degenerate shapes score higher — a filled square really does match every
+  // ink tile it covers — so what matters is that they stay clear of the accept
+  // gate rather than reaching zero.
+  const shapes = {
+    'a solid blob': solid(300, 300, (a, w) => ink(a, w, 60, 60, 240, 240)),
+    'pixel noise': solid(300, 300, (a) => {
+      for (let i = 0; i < a.length; i += 4) { const v = (i * 2654435761) % 255; a[i] = a[i+1] = a[i+2] = v; }
+    }),
+  };
+  for (const [what, img] of Object.entries(shapes)) {
+    const r = inspect(img);
+    assert.equal(r.payload, null, `${what} decoded to something`);
+    assert.ok(r.score < 0.62, `${what} scored ${r.score.toFixed(3)}, too close to the accept gate`);
+  }
+
+  const real = inspect(rasterize(P1, { px: 300, quiet: 2 }));
+  assert.equal(real.payload, P1);
+  assert.ok(real.score > 0.9, `a real seal scored ${real.score.toFixed(3)}, expected near 1`);
 });
 
 test('never throws on hostile input', () => {

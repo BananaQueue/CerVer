@@ -23,7 +23,38 @@ const INK_PTS = (() => {
   return Float64Array.from(a);
 })();
 
-const MIN_FIXED_MATCH = 0.86; // fraction of fixed tiles that must agree
+// The fixed tiles are scored in three groups, and the match is the WORST of the
+// three rates. A single pooled agreement count is worthless here, for two
+// compounding reasons:
+//
+//   1186 of the 1631 fixed tiles are expected BARE, so a pooled count hands any
+//   mostly-white frame 0.727 before it has seen anything — and a camera pointed
+//   at blank paper always has some incidental ink in view, so it cleared that
+//   floor and the scan reported a seal that was not there.
+//
+//   Of those bare tiles, 1047 are the field surrounding the mark and only 139
+//   are holes in the artwork itself — the tree, the gaps between the bands. The
+//   surrounding field is free for anything disc-shaped, and the seal IS a disc,
+//   so a dark blob scored 0.67 on the outline alone. The holes are where the
+//   artwork is actually distinguishable, and they are outnumbered 8:1.
+//
+// Splitting them makes each necessary: bare paper fails ON, a filled blob fails
+// HOLE, ink bleeding past the rim fails FIELD, and only the artwork passes all
+// three.
+const isInterior = (r, c) => {
+  const at = (y, x) => (y < 0 || x < 0 || y >= N || x >= N ? 0 : GRID[y][x] === '1' ? 1 : 0);
+  let up = 0, dn = 0, lf = 0, rt = 0;
+  for (let i = 0; i < r; i++) if (at(i, c)) up = 1;
+  for (let i = r + 1; i < N; i++) if (at(i, c)) dn = 1;
+  for (let j = 0; j < c; j++) if (at(r, j)) lf = 1;
+  for (let j = c + 1; j < N; j++) if (at(r, j)) rt = 1;
+  return up && dn && lf && rt;
+};
+const FIXED_ON = FIXED.filter((f) => f[2] === 1);
+const FIXED_HOLE = FIXED.filter((f) => f[2] === 0 && isInterior(f[0], f[1]));
+const FIXED_FIELD = FIXED.filter((f) => f[2] === 0 && !isInterior(f[0], f[1]));
+
+const MIN_FIXED_MATCH = 0.72; // every group must reach this
 
 function toGray(img) {
   const { width: w, height: h, data } = img;
@@ -184,16 +215,20 @@ function decodeCore(img) {
       return v <= thr ? 1 : 0;
     };
 
-    // Score a candidate rotation on the fixed tiles only.
+    // Score a candidate rotation on the fixed tiles only, as the worse of the
+    // ink-tile and bare-tile agreement rates.
     const score = (deg, k = 1) => {
       const t = (deg * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t);
       const fit = fitFor(cos, sin, k);
-      let ok = 0;
-      for (let i = 0; i < FIXED.length; i++) {
-        const f = FIXED[i];
-        if (sampleAt(f[0], f[1], cos, sin, fit) === f[2]) ok++;
-      }
-      return ok / FIXED.length;
+      const rate = (group, want) => {
+        let ok = 0;
+        for (let i = 0; i < group.length; i++) {
+          const f = group[i];
+          if (sampleAt(f[0], f[1], cos, sin, fit) === want) ok++;
+        }
+        return ok / group.length;
+      };
+      return Math.min(rate(FIXED_ON, 1), rate(FIXED_HOLE, 0), rate(FIXED_FIELD, 0));
     };
 
     // Coarse sweep then refine. The artwork is strongly asymmetric, so the true
