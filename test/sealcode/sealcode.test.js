@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { N, GRID, CARRIERS, FIXED } from '../../src/sealcode/baseline.js';
 import { tilesFor, payloadFromTiles, rasterize, renderSvg, baselineTiles } from '../../src/sealcode/encode.js';
 import { decode, inspect } from '../../src/sealcode/decode.js';
+import { TOTAL_BITS, NSYM } from '../../src/sealcode/payload.js';
 
 const P1 = 'CVR|R1-2026-010734|1|PP64-QXA6';
 const P2 = 'CVR|R1-2025-023099|7|BDIN-YZNT';
@@ -177,4 +178,52 @@ test('decodes through real browser rasterisation, not just the pixel double', as
   } finally {
     await b.close();
   }
+});
+
+test('the mark spends its capacity on error correction', () => {
+  // 305 carriers exist. Leaving most of them inked and carrying nothing, while
+  // reads were failing on paper, was the waste this pins shut.
+  assert.equal(TOTAL_BITS, 280);
+  assert.ok(TOTAL_BITS <= CARRIERS.length, 'the payload must fit the mark');
+  assert.ok(
+    CARRIERS.length - TOTAL_BITS < 40,
+    `${CARRIERS.length - TOTAL_BITS} carriers idle — capacity that could be correcting errors`
+  );
+  assert.ok(NSYM >= 24, 'parity must not be trimmed without re-running scripts/rs-bench.mjs');
+});
+
+test('a real seal survives tiles being misread', () => {
+  // Every other end-to-end test uses a clean render. This is the property that
+  // decides whether a mark reads off paper: how many tiles can come back wrong
+  // and still recover. Flips are deterministic, so a regression is a failure
+  // rather than an unlucky run.
+  //
+  // Thresholds come from scripts/rs-bench.mjs, set well under the measured rate
+  // so the test fails on a real loss of correction and not on variance.
+  let seed = 4242;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const runs = 60;
+
+  const rate = (frac) => {
+    let ok = 0;
+    let flipped = 0;
+    for (let r = 0; r < runs; r++) {
+      const tiles = tilesFor(P1);
+      for (const [row, col] of CARRIERS) {
+        if (rand() < frac) { tiles[row][col] = tiles[row][col] ? 0 : 1; flipped++; }
+      }
+      if (payloadFromTiles(tiles) === P1) ok++;
+    }
+    return { ok, flipped };
+  };
+
+  const clean = rate(0.02); // ~6 tiles of 305 wrong
+  assert.equal(clean.ok, runs, `2% of carriers wrong: only ${clean.ok}/${runs} recovered`);
+  assert.ok(clean.flipped > 100, 'the test should be flipping real numbers of tiles');
+
+  const rough = rate(0.03); // ~9 tiles wrong; measured ~92% recovery
+  assert.ok(
+    rough.ok >= runs * 0.8,
+    `3% of carriers wrong: only ${rough.ok}/${runs} recovered — correction has regressed`
+  );
 });

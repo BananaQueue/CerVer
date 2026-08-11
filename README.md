@@ -60,6 +60,12 @@ tiles keep their ink — with the human-readable seal line beneath it:
 seal is unforgeable; it binds the document, the page position, and the page
 content.
 
+The mark carries 11 data bytes protected by 24 Reed-Solomon parity bytes, so up
+to 12 of its 35 code bytes can come back wrong and still recover. That uses 280
+of the 305 carrier tiles; it used to use 184 and leave the rest inked, doing
+nothing. Measured over 20,000 simulated reads, with each carried bit misread at
+3%, recovery went from 64.5% to 91.9% — see `node scripts/rs-bench.mjs`.
+
 The mark is **22 mm** (0.5 mm per tile), settled by printing a calibration sheet
 on an office inkjet and photographing each rung. 18 mm reads, but not every
 time; 22 mm reads first time. At this scale ink spread leaves very little

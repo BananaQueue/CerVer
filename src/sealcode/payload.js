@@ -13,10 +13,26 @@ import { rsEncode, rsDecode } from './rs.js';
 //               the cryptographic seal to save a byte is a bad trade in a
 //               verification system
 //
-// 11 data + 12 parity corrects up to 6 corrupted bytes of 23 (~26% redundancy).
+// 11 data + 24 parity corrects up to 12 corrupted bytes of 35.
+//
+// The parity size is set by what the mark can hold, not by taste. There are 305
+// carrier tiles; this uses 280 of them. It was 12 parity bytes using 184, which
+// left 121 tiles carrying nothing at all — they were simply left inked, so a
+// third of the mark's capacity was doing no work while reads were failing.
+//
+// Measured over 20,000 simulated reads per point (scripts/rs-bench.mjs), with
+// each carried bit independently misread at probability p:
+//
+//        p     3.0%   3.5%   4.0%   4.5%
+//   12 parity  64.5   54.4   44.9   32.9   % of reads that recover
+//   24 parity  91.9   82.0   74.0   60.0
+//
+// 27 parity would fill the mark exactly and measures the same in that band, but
+// slightly worse beyond it — more parity is also more surface to corrupt — so 24
+// wins on the tail and leaves 25 tiles spare for a future field.
 
 export const DATA_BYTES = 11;
-export const NSYM = 12;
+export const NSYM = 24;
 export const CODE_BYTES = DATA_BYTES + NSYM; // 23
 export const TOTAL_BITS = CODE_BYTES * 8; // 184
 
