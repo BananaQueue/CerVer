@@ -5,6 +5,7 @@
 // Exits non-zero if the seal would cover content, so it can gate a batch.
 import { readFile } from 'node:fs/promises';
 import { checkSealFit, findClearSpot } from '../src/sealFit.js';
+import { SEALCODE_MM } from '../src/sealer.js';
 
 const file = process.argv[2];
 if (!file) {
@@ -17,7 +18,7 @@ const rep = await checkSealFit(await readFile(file), mm ? { mm } : undefined);
 const s = rep.seal;
 console.log(
   `seal block: x ${s.x0.toFixed(1)}–${s.x1.toFixed(1)}, y ${s.y0.toFixed(1)}–${s.y1.toFixed(1)} pt` +
-    `  (${mm || 22} mm mark plus its printed line)\n`
+    `  (${mm || SEALCODE_MM} mm mark plus its printed line)\n`
 );
 
 for (const p of rep.pages) {

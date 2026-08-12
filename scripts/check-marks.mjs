@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { readFile, mkdir, copyFile } from 'node:fs/promises';
+import { SEALCODE_MM } from '../src/sealer.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pdf = process.argv[2] || path.join(here, 'print-test-sealed.pdf');
@@ -27,7 +28,7 @@ try {
   await page.waitForFunction(() => window.__ready, null, { timeout: 30000 });
 
   const bytes = Array.from(await readFile(pdf));
-  const results = await page.evaluate(async (bytes) => {
+  const results = await page.evaluate(async ({ bytes, sealMm }) => {
     const dec = await import('/sealcode/decode.js');
     const host = document.createElement('div');
     host.id = 'probe';
@@ -64,7 +65,7 @@ try {
       return out;
     };
 
-    const SEAL = (22 / 25.4) * 72; // must track SEALCODE_MM in src/sealer.js
+    const SEAL = (sealMm / 25.4) * 72; // passed in from SEALCODE_MM, not copied
     const out = [];
     for (let p = 1; p <= 3; p++) {
       const cv = await window.__renderPage(bytes, p, 4);
@@ -77,7 +78,7 @@ try {
       });
     }
     return out;
-  }, bytes);
+  }, { bytes, sealMm: SEALCODE_MM });
 
   let bad = 0;
   for (const r of results) {

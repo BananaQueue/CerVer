@@ -169,6 +169,82 @@ function markCandidates(bin, w, h) {
   return out;
 }
 
+// Boxes with thin protrusions trimmed off.
+//
+// Every box above is an extent box, so anything that runs off the edge of the
+// mark — a ballpen stroke across the page, a smudge — inflates all of them at
+// once, and the artwork is then fitted to a rectangle the mark does not occupy.
+// The mark tolerates ink ON it well (Reed-Solomon absorbs the damaged tiles); it
+// is ink extending PAST it that cannot be recovered, because a misplaced box
+// misreads every tile at once and no amount of parity covers that.
+//
+// What separates a stroke from the artwork is thickness: a pen line is about a
+// tile wide, while the disc and bands run many tiles. So walk in from each edge
+// while the longest ink run in that row or column is short, and stop where the
+// artwork begins.
+//
+// Several thresholds are offered rather than one tuned value. The fixed-tile
+// score already decides between candidates, so a wrong trim simply loses — and
+// on real captures the workable band is narrow and moves with blur, which is
+// exactly the thing not to hard-code.
+//
+// These are regions to look inside, not boxes to fit the artwork to. The stroke
+// still crosses the rows the mark occupies, so the trimmed rectangle is only
+// approximately the mark; what recovers the read is confining the ordinary
+// component clustering to that region, where the stroke's remnant is no longer
+// joined to anything that reaches the edge.
+function trimBoxes(bin, w, h) {
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!bin[y * w + x]) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return [];
+
+  // Longest ink run per row and per column, measured once and reused by every
+  // threshold, so offering more thresholds costs almost nothing.
+  const rowRun = new Int32Array(h), colRun = new Int32Array(w);
+  for (let y = 0; y < h; y++) {
+    let run = 0, best = 0;
+    for (let x = 0; x < w; x++) {
+      if (bin[y * w + x]) { if (++run > best) best = run; } else run = 0;
+    }
+    rowRun[y] = best;
+  }
+  for (let x = 0; x < w; x++) {
+    let run = 0, best = 0;
+    for (let y = 0; y < h; y++) {
+      if (bin[y * w + x]) { if (++run > best) best = run; } else run = 0;
+    }
+    colRun[x] = best;
+  }
+
+  // A stroke inflates one axis and rarely both, so the SHORTER side of the ink
+  // box is the more honest estimate of a tile. On the capture this was built
+  // from, the box is 677x477 with the width inflated by the stroke, and
+  // min(677,477)/44 lands on 10.8 px — the pitch the decoder goes on to recover.
+  const tile = Math.min(maxX - minX + 1, maxY - minY + 1) / N;
+  const out = [];
+  for (const k of [1, 2, 3, 4, 5, 6, 8]) {
+    const minRun = tile * k;
+    let y0 = minY; while (y0 < maxY && rowRun[y0] < minRun) y0++;
+    let y1 = maxY; while (y1 > y0 && rowRun[y1] < minRun) y1--;
+    let x0 = minX; while (x0 < maxX && colRun[x0] < minRun) x0++;
+    let x1 = maxX; while (x1 > x0 && colRun[x1] < minRun) x1--;
+    if (x1 <= x0 || y1 <= y0) continue;
+    // Trimmed nothing: the ordinary boxes already covered this.
+    if (x0 === minX && y0 === minY && x1 === maxX && y1 === maxY) continue;
+    if (out.some((o) => o.minX === x0 && o.minY === y0 && o.maxX === x1 && o.maxY === y1)) continue;
+    out.push({ area: 0, minX: x0, minY: y0, maxX: x1, maxY: y1 });
+  }
+  return out;
+}
+
 function componentsOf(bin, w, h) {
   const label = new Int32Array(w * h).fill(-1);
   const stack = new Int32Array(w * h);
@@ -230,7 +306,25 @@ function localThreshold(g, w, h, radius, bias) {
   return thr;
 }
 
-function decodeCore(img) {
+/** Copy of `img` bounded by `b`. */
+function cropTo(img, b) {
+  const w = b.maxX - b.minX + 1, h = b.maxY - b.minY + 1;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    let s = ((y + b.minY) * img.width + b.minX) * 4, d = y * w * 4;
+    for (let x = 0; x < w; x++, s += 4, d += 4) {
+      data[d] = img.data[s];
+      data[d + 1] = img.data[s + 1];
+      data[d + 2] = img.data[s + 2];
+      data[d + 3] = 255;
+    }
+  }
+  return { width: w, height: h, data };
+}
+
+// `depth` guards the retry below: the trimmed region is decoded by the same
+// routine, and must not trim again.
+function decodeCore(img, depth = 0) {
   try {
     const NO = { payload: null, score: 0, deg: 0, pitch: 0 };
     if (!img || !img.data || !img.width || !img.height) return NO;
@@ -248,21 +342,46 @@ function decodeCore(img) {
       () => localThreshold(g, w, h, Math.max(8, Math.round(Math.min(w, h) / 12)), 6),
     ];
 
+    const wideEnough = (c) =>
+      Math.max(c.maxX - c.minX + 1, c.maxY - c.minY + 1) >= INK_BBOX.cols;
+
     let best = NO;
+    const binned = [];
     for (const makeThr of modes) {
       const thrMap = makeThr();
       const bin = new Uint8Array(w * h);
       let dark = 0;
       for (let i = 0; i < w * h; i++) if (g[i] <= thrMap[i]) { bin[i] = 1; dark++; }
       if (dark < 200) continue;
+      binned.push({ bin, thrMap });
 
-      const candidates = markCandidates(bin, w, h).filter(
-        (c) => Math.max(c.maxX - c.minX + 1, c.maxY - c.minY + 1) >= INK_BBOX.cols
-      );
-      for (const bb of candidates) {
+      for (const bb of markCandidates(bin, w, h).filter(wideEnough)) {
         const got = readFrom(bb, thrMap);
         if (got.score > best.score) best = got;
         if (got.payload) return got; // a clean read settles it
+      }
+    }
+
+    // Nothing read from the extent boxes. Ink that runs off the edge of the mark
+    // inflates every one of them at once, so try again with thin protrusions
+    // trimmed away. Deliberately only on failure: pages without a stroke on them
+    // never pay for this, and a page that has one has already produced nothing.
+    // Re-run the whole pipeline on the trimmed region rather than just refitting
+    // to it. Both halves matter: the clustering no longer sees the tail that ran
+    // off the mark's edge, and the local threshold re-adapts to a window scaled
+    // to the region instead of the whole frame. Refitting alone recovers part of
+    // the loss and is not enough.
+    if (depth === 0) {
+      const seen = new Set();
+      for (const { bin } of binned) {
+        for (const t of trimBoxes(bin, w, h)) {
+          const key = `${t.minX},${t.minY},${t.maxX},${t.maxY}`;
+          if (seen.has(key)) continue; // the two threshold modes often agree
+          seen.add(key);
+          const got = decodeCore(cropTo(img, t), depth + 1);
+          if (got.score > best.score) best = got;
+          if (got.payload) return got;
+        }
       }
     }
     return best;

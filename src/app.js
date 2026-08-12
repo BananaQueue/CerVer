@@ -224,7 +224,13 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
   // the decoder can be tested against the image the camera actually saw.
   //
   // Off unless CERVER_FRAME_CAPTURE=1 — it writes files to disk on request.
-  app.post('/api/frame', async (req, reply) => {
+  // A diagnostic frame is a full-resolution PNG carried as a base64 data URL, so
+  // the body runs well past fastify's 1 MiB default — which cut the upload off
+  // mid-flight and left the phone's save button hanging rather than reporting an
+  // error. Raised on this route alone; the rest of the API takes small JSON and
+  // keeps the tight default. Sized so the 8 MB guard below is what actually
+  // decides, base64 being 4/3 the size of the bytes it carries.
+  app.post('/api/frame', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
     if (process.env.CERVER_FRAME_CAPTURE !== '1') {
       return reply.code(404).send({ error: 'Frame capture is off.' });
     }

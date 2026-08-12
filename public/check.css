@@ -157,7 +157,21 @@ main { flex: 1; padding: 0.9rem 0.9rem calc(var(--bar) + 1.2rem); }
   display: grid;
   place-items: center;
 }
-#pageVideo { width: 100%; height: 100%; object-fit: cover; display: none; }
+/* Absolutely positioned, not a grid item: `place-items: center` above cancels
+   the default stretch (it is there to centre the aiming artwork), which left the
+   video to size itself from its own intrinsic aspect ratio. Desktop resolved
+   height:100% against the 4:3 grid area; iOS resolved it to the camera's own
+   portrait shape, so the region `cover` cropped was not the region on screen and
+   the decoder could not be told what the viewfinder was showing. Pinning to the
+   padding box makes the displayed region well defined on every browser. */
+#pageVideo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
 .viewport.live #pageVideo { display: block; }
 .viewport.live .target, .viewport.live .aim { display: none; }
 

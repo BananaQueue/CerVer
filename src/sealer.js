@@ -8,14 +8,28 @@ const INK = rgb(0.043, 0.239, 0.18); // EMB pine green
 // payload carried by clearing interior tiles. Drawn as vector rectangles rather
 // than an embedded raster so it stays crisp at any print resolution.
 //
-// 22 mm — 0.5 mm per tile. The calibration sheet was printed on an office inkjet
-// and photographed rung by rung: 18 mm reads, but only sometimes, and a mark
-// that reads on the second or third attempt is one a counter clerk will stop
-// trusting. 22 mm is the size that reads first time. The 0.09 mm per tile
-// between them is the whole difference, which is how little headroom ink spread
-// leaves at this scale — so this number is measured, not chosen, and should not
-// be trimmed again without reprinting the ladder.
-export const SEALCODE_MM = 22;
+// 16 mm — 0.36 mm per tile.
+//
+// The earlier 22 mm came from photographing a printed calibration ladder: 18 mm
+// read only sometimes, 22 mm read first time, and the conclusion drawn was that
+// ink spread left almost no headroom below 22 mm. That conclusion was wrong, and
+// the ladder was not what was wrong with it.
+//
+// The scanner was decoding a different region of the camera frame than the
+// preview displayed, so part of the mark was routinely cropped out of the image
+// being read. Small marks failed first, because they had least margin for a crop
+// that nobody could see. The ladder faithfully measured a capture bug and
+// reported it as a property of the ink.
+//
+// With the capture region corrected to match the viewport, 14 mm reads. 16 mm is
+// that result with a rung of margin kept back, rather than the smallest size
+// observed to work.
+//
+// Note what is still untested: the ladder was never rephotographed after the
+// capture fix. This is one size confirmed by hand, not a re-measured curve, and
+// the ink-spread limit that 22 mm was blamed on has not been located — only
+// shown to sit below 14 mm. Reprint the ladder before trusting anything smaller.
+export const SEALCODE_MM = 16;
 const SEAL_MARGIN = 26; // pt in from the right edge
 const SEAL_BASELINE = 34; // pt up from the bottom edge
 const FOOTER_SIZE = 6; // pt, Courier

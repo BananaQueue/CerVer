@@ -7,6 +7,8 @@
 // that QR cannot reach — whether the PAGE in your hand belongs to the document,
 // and what the authoritative page actually says.
 
+import { coverSourceRect } from '/coverRect.js';
+
 const resultEl = document.getElementById('result');
 
 function esc(s) {
@@ -381,6 +383,10 @@ const pageScanner = (() => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: dataUrl, info: lastInfo, ua: navigator.userAgent }),
+        // Without this the button can hang on "Saving…" forever: a server that
+        // rejects an oversized body mid-upload can leave the request never
+        // settling, and the reset below sits after the await.
+        signal: AbortSignal.timeout(20000),
       });
       const j = await r.json();
       saveBtn.textContent = r.ok ? `Saved ${j.file}` : `Failed: ${j.error || r.status}`;
@@ -399,21 +405,42 @@ const pageScanner = (() => {
       if (!busy && video.videoWidth) {
         busy = true;
         try {
-          // Centre square crop, so the seal fills as much of the frame as possible.
-          const side = Math.min(video.videoWidth, video.videoHeight);
-          const px = Math.min(700, side);
-          cv.width = px;
-          cv.height = px;
-          cx.fillStyle = '#fff';
-          cx.fillRect(0, 0, px, px);
-          cx.drawImage(
-            video,
-            (video.videoWidth - side) / 2, (video.videoHeight - side) / 2, side, side,
-            0, 0, px, px
+          // Decode exactly what the viewport is showing. The element is drawn with
+          // `object-fit: cover`, so the visible region is neither the whole frame
+          // nor its centre square — and if the decoder reads a different region
+          // than the preview displays, aiming the mark becomes guesswork.
+          // The viewport is the authority on what is on screen: it carries the
+          // 4:3 box and clips with overflow:hidden. Measuring the video element
+          // instead trusts however this browser sized a replaced element, which
+          // is exactly what differed between desktop and iOS.
+          const boxEl = viewport || video;
+          const boxW = boxEl.clientWidth || video.clientWidth;
+          const boxH = boxEl.clientHeight || video.clientHeight;
+          const { sx, sy, sw, sh } = coverSourceRect(
+            video.videoWidth, video.videoHeight, boxW, boxH
           );
+          // Cap the SHORTER side, so a wide region is not squeezed into fewer
+          // pixels per tile than a square one would have been. Resolution across
+          // the mark is what the decoder actually spends.
+          const scale = Math.min(1, 700 / Math.min(sw, sh));
+          const w = Math.max(1, Math.round(sw * scale));
+          const h = Math.max(1, Math.round(sh * scale));
+          cv.width = w;
+          cv.height = h;
+          cx.fillStyle = '#fff';
+          cx.fillRect(0, 0, w, h);
+          cx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
 
           if (sealInspect) {
-            const info = sealInspect(cx.getImageData(0, 0, px, px));
+            const info = sealInspect(cx.getImageData(0, 0, w, h));
+            // Carried into the saved diagnostic frame: without these, a capture
+            // that went wrong cannot be told apart from one that was aimed badly.
+            info.capture = {
+              frame: [video.videoWidth, video.videoHeight],
+              box: [boxW, boxH],
+              src: [Math.round(sx), Math.round(sy), Math.round(sw), Math.round(sh)],
+              out: [w, h],
+            };
             lastFrame = cv; // live canvas — encoded only if the user asks to save
             lastInfo = info;
             report(info);

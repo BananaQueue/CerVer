@@ -66,11 +66,21 @@ of the 305 carrier tiles; it used to use 184 and leave the rest inked, doing
 nothing. Measured over 20,000 simulated reads, with each carried bit misread at
 3%, recovery went from 64.5% to 91.9% — see `node scripts/rs-bench.mjs`.
 
-The mark is **22 mm** (0.5 mm per tile), settled by printing a calibration sheet
-on an office inkjet and photographing each rung. 18 mm reads, but not every
-time; 22 mm reads first time. At this scale ink spread leaves very little
-headroom — 0.09 mm per tile is the whole difference — so the size is measured,
-not chosen, and should not be trimmed without reprinting the ladder.
+The mark is **16 mm** (0.36 mm per tile). It was 22 mm, settled by photographing
+a printed calibration ladder: 18 mm read only sometimes, 22 mm read first time,
+and ink spread was blamed for leaving no headroom below that.
+
+That reading was wrong. The scanner was decoding a different region of the camera
+frame than the preview displayed, so part of the mark was routinely cropped out
+of the image being read — and small marks failed first, having least margin for a
+crop nobody could see. The ladder measured a capture bug and reported it as a
+property of the ink. With the capture region corrected, 14 mm reads; 16 mm keeps
+a rung of margin.
+
+The ladder has not been rephotographed since. 16 mm is one size confirmed by
+hand, not a re-measured curve, and the real ink-spread limit is only known to sit
+below 14 mm. Reprint the ladder (`node scripts/make-size-ladder.mjs`) before
+going smaller.
 
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
 page) → it stamps every page and records each page's digest → the downloaded
