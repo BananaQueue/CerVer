@@ -82,6 +82,17 @@ hand, not a re-measured curve, and the real ink-spread limit is only known to si
 below 14 mm. Reprint the ladder (`node scripts/make-size-ladder.mjs`) before
 going smaller.
 
+**Diagnostics (off by default).** `CERVER_FRAME_CAPTURE=1` enables saving the
+live scanner frame to `frames/` for offline analysis — how the pen-stroke
+regression fixture was captured. It is a developer tool, so nothing about it is
+shown unless it is switched on: `/health` reports `frameCapture`, and the page
+only offers the button when the server says so. Without it the button never
+appears and `/api/frame` is 404.
+
+```bash
+CERVER_FRAME_CAPTURE=1 npm start
+```
+
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
 page) → its control number is read off the document and shown for confirmation →
 it stamps every page and records each page's digest → the downloaded sealed PDF

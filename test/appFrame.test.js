@@ -50,6 +50,26 @@ function pngDataUrl(bytes) {
   return 'data:image/png;base64,' + Buffer.alloc(bytes, 7).toString('base64');
 }
 
+// The page cannot read the server's environment, so it has to ask. Without this
+// the diagnostic button is shown to everyone and 404s when pressed.
+test('health reports diagnostics off, so the page can hide the button', async () => {
+  const prev = process.env.CERVER_FRAME_CAPTURE;
+  delete process.env.CERVER_FRAME_CAPTURE;
+  try {
+    const r = await appFor().inject({ method: 'GET', url: '/health' });
+    assert.deepEqual(JSON.parse(r.body), { ok: true, frameCapture: false });
+  } finally {
+    if (prev === undefined) delete process.env.CERVER_FRAME_CAPTURE;
+    else process.env.CERVER_FRAME_CAPTURE = prev;
+  }
+});
+
+test('health reports diagnostics on when they are enabled', async () => {
+  process.env.CERVER_FRAME_CAPTURE = '1';
+  const r = await appFor().inject({ method: 'GET', url: '/health' });
+  assert.equal(JSON.parse(r.body).frameCapture, true);
+});
+
 test('accepts a frame larger than the framework default body limit', async () => {
   // 700x700 captures landed near 600 KB; a 932x700 one clears 1 MiB, which is
   // fastify's default and where the upload was being cut off.
