@@ -164,4 +164,5 @@ agree.
   decoding, doubling the correction budget). Only worth doing if registration
   succeeds and bit errors then dominate, which is not the failure being seen.
 - Re-photographing the size ladder now that capture geometry is honest.
-- `send.html`'s separate progressive-centre-crop capture path.
+- `send.html`'s separate progressive-centre-crop capture path. (Moot as of
+  2026-08-12: that page has been removed.)

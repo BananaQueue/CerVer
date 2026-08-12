@@ -285,6 +285,15 @@ const pageScanner = (() => {
   let lastFrame = null; // most recent capture, for "save this frame"
   let lastInfo = null;
 
+  // Saving a frame is a developer tool, not something to put in front of the
+  // person checking a document. It stays in the build and switches on with
+  // CERVER_FRAME_CAPTURE=1; until the server says so, the button never appears.
+  let diagnosticsOn = false;
+  fetch('/health')
+    .then((r) => r.json())
+    .then((h) => { diagnosticsOn = h?.frameCapture === true; })
+    .catch(() => { diagnosticsOn = false; });
+
   async function ensureDecoders() {
     if (!sealInspect) {
       try {
@@ -315,7 +324,7 @@ const pageScanner = (() => {
       toggle.textContent = 'Stop camera';
       hint.textContent = '';
       diag.hidden = false;
-      saveBtn.hidden = false;
+      saveBtn.hidden = !diagnosticsOn;
       orientation(false); // the camera is up; the explaining is done
       clearResult();
       loop();

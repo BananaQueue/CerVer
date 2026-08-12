@@ -33,7 +33,14 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
 
   app.register(fastifyMultipart, { limits: { fileSize: 25 * 1024 * 1024 } });
 
-  app.get('/health', async () => ({ ok: true }));
+  // `frameCapture` tells the page whether the diagnostic frame-save exists on
+  // this deployment. The endpoint has always been gated by the environment, but
+  // the button was not, so a counter clerk was offered a developer tool that
+  // 404s. The page cannot read the server's environment, so it asks here.
+  app.get('/health', async () => ({
+    ok: true,
+    frameCapture: process.env.CERVER_FRAME_CAPTURE === '1',
+  }));
 
   // ---- Transaction verification (existing) ----
   app.get('/api/verify/:id', async (req) => {
@@ -286,61 +293,6 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
       JSON.stringify({ info: info ?? null, ua: ua ?? null, bytes: buf.length }, null, 2)
     );
     return { file, bytes: buf.length };
-  });
-
-  // Same destination, but for a photo or screenshot picked from the phone's
-  // gallery rather than grabbed off the live scanner — the failure worth looking
-  // at is often the one already sitting in the camera roll.
-  app.post('/api/upload', async (req, reply) => {
-    if (process.env.CERVER_FRAME_CAPTURE !== '1') {
-      return reply.code(404).send({ error: 'Frame capture is off.' });
-    }
-    const data = await req.file();
-    if (!data) return reply.code(400).send({ error: 'No file uploaded.' });
-    if (!/^image\//.test(data.mimetype || '')) {
-      return reply.code(415).send({ error: `Expected an image, got ${data.mimetype}.` });
-    }
-    const buf = await data.toBuffer();
-
-    const dir = path.join(srcDir, '..', 'frames');
-    await fs.mkdir(dir, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const ext = (data.mimetype.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '').slice(0, 5);
-    const file = `shot-${stamp}.${ext}`;
-    await fs.writeFile(path.join(dir, file), buf);
-    await fs.writeFile(
-      path.join(dir, `shot-${stamp}.json`),
-      JSON.stringify(
-        {
-          original: data.filename ?? null,
-          mimetype: data.mimetype,
-          note: data.fields?.note?.value ?? null,
-          verdict: data.fields?.verdict?.value ?? null,
-          ua: req.headers['user-agent'] ?? null,
-          bytes: buf.length,
-        },
-        null,
-        2
-      )
-    );
-    return { file, bytes: buf.length };
-  });
-
-  // What has been sent so far, newest first.
-  app.get('/api/frames', async () => {
-    const dir = path.join(srcDir, '..', 'frames');
-    let names = [];
-    try {
-      names = await fs.readdir(dir);
-    } catch {
-      return { frames: [] };
-    }
-    const frames = [];
-    for (const n of names.filter((n) => !n.endsWith('.json')).sort().reverse()) {
-      const { size } = await fs.stat(path.join(dir, n));
-      frames.push({ file: n, bytes: size });
-    }
-    return { frames };
   });
 
   app.register(fastifyStatic, { root: publicDir, prefix: '/' });
