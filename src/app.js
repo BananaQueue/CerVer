@@ -25,7 +25,7 @@ function safeName(s) {
  * @param [deps.keyProvider] seal key provider (defaults to env-backed)
  * @param [deps.sealedDir]   where sealed PDFs are written
  */
-export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
+export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr }) {
   const app = Fastify({ logger: false, https });
   const keys = keyProvider || defaultKeyProvider();
   const sealDir = sealedDir || config.sealedDir;
@@ -75,7 +75,43 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https }) {
     // When the usual corner is taken, say where it could go instead rather than
     // leaving the only options as "cover it" or "give up".
     const moveTo = fit.clear ? null : (await findClearSpot(bytes)).spot;
-    return { ...fit, moveTo };
+
+    // Read the document's own control number off it. This is the field that
+    // binds every page seal to a document, and a typo in it does not fail
+    // loudly — it seals the pages under the wrong number. Confirming what the
+    // document says beats transcribing it.
+    let found = { best: null, candidates: [] };
+    try {
+      const { extractPageTexts } = await import('./pdfTools.js');
+      const { detectControlNo } = await import('./controlNo.js');
+      found = detectControlNo(await extractPageTexts(bytes));
+    } catch {
+      // A PDF whose text will not come out is not a reason to fail the
+      // pre-flight: the QR is tried next, and the number can still be typed.
+    }
+    if (found.best) {
+      return { ...fit, moveTo, iisNo: found.best, candidates: found.candidates, source: 'text', record: null, lookup: null };
+    }
+
+    // The text did not say. On a Special Order it never will — the number is a
+    // blank there ("No. 25- ______") and lives only in IIS. The document's own
+    // QR leads to a public page that states it, so ask that.
+    let lookup = { ok: false, reason: 'not-tried' };
+    try {
+      const resolve = resolveQr || (await import('./iisQr.js')).resolveViaQr;
+      const got = await resolve(bytes, { iisBaseUrl: config.iisBaseUrl });
+      lookup = got?.ok
+        ? { ok: true, reason: null, url: got.url }
+        : { ok: false, reason: got?.reason || 'unreachable', detail: got?.detail || null };
+      if (got?.ok) {
+        return { ...fit, moveTo, iisNo: got.iisNo, candidates: [], source: 'iis', record: got.record, lookup };
+      }
+    } catch (e) {
+      // Chrome absent, IIS unreachable, anything else — the pre-flight still has
+      // a fit report to give, and the number can be typed.
+      lookup = { ok: false, reason: 'unreachable', detail: String(e?.message || e).split('\n')[0] };
+    }
+    return { ...fit, moveTo, iisNo: null, candidates: found.candidates, source: null, record: null, lookup };
   });
 
   app.post('/api/seal', async (req, reply) => {

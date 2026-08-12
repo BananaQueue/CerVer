@@ -83,8 +83,33 @@ below 14 mm. Reprint the ladder (`node scripts/make-size-ladder.mjs`) before
 going smaller.
 
 **Workflow:** feed the FINAL signed PDF into CerVer (staff "Seal a document"
-page) → it stamps every page and records each page's digest → the downloaded
-sealed PDF is the copy that gets printed.
+page) → its control number is read off the document and shown for confirmation →
+it stamps every page and records each page's digest → the downloaded sealed PDF
+is the copy that gets printed.
+
+The control number is the field every page seal binds to, and a typo in it does
+not fail loudly — it seals the pages under the wrong document. So it is read off
+the document rather than typed, in two steps:
+
+1. **The PDF's own text.** Free and offline. Works for documents that print
+   their number, like `Control No. R1-2026-010734`.
+2. **The QR the document already carries.** A Special Order leaves the number
+   blank in its text (`No. 25- ______ Series of 2025`) — it exists only in IIS.
+   The QR leads to a public verification page that states it. The token in the
+   QR is opaque, so this needs a real fetch.
+
+Only `R1-YYYY-NNNNNN` is looked for, being the only shape the mark can carry.
+Either way the number is shown for confirmation with its evidence — where in the
+text it was found, or the subject and division IIS returned — so that confirming
+is a real check rather than a reflex. When neither answers, the field stays empty
+and is filled in by hand; "could not reach IIS" is reported as itself, not as
+"not found".
+
+The QR step drives a headless Chrome (about 5 s), for two reasons: rasterising a
+PDF page needs a canvas, and `iis.emb.gov.ph` serves an incomplete certificate
+chain that node's TLS stack rejects while a browser resolves it. **A QR in an
+uploaded document is untrusted input** — only the configured IIS host is ever
+followed, so a crafted document cannot make the server fetch elsewhere.
 
 Before stamping, the lower-right corner of every page is checked for anything the
 seal would land on — text, images, drawn shapes — and sealing stops for

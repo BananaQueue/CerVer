@@ -18,19 +18,24 @@ function card(ink, stamp, sub, eyebrow, id, msg, extra = '') {
   resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Ask whether the seal would land on top of anything.
-// Returns null to stop, otherwise the position to seal at (null = the usual corner).
-async function corner(file) {
+// Read the document once: what the seal would cover, and the control number
+// printed on it. Runs when the file is chosen, and the answer is kept so
+// pressing Seal does not upload it a second time.
+async function readDocument(file) {
   const fd = new FormData();
   fd.append('file', file, file.name);
-  let rep;
   try {
     const res = await fetch('/api/seal-fit', { method: 'POST', body: fd });
-    if (!res.ok) return { at: null }; // the check is a courtesy; never block on its failure
-    rep = await res.json();
+    return res.ok ? await res.json() : null;
   } catch {
-    return { at: null };
+    return null;
   }
+}
+
+// Ask whether the seal would land on top of anything.
+// Returns null to stop, otherwise the position to seal at (null = the usual corner).
+function corner(rep) {
+  if (!rep) return { at: null }; // the check is a courtesy; never block on its failure
   if (rep.clear) {
     // A rule crossing the corner is normal letterhead, worth a word but not a stop.
     if (rep.ruled?.length) console.info('seal crosses a footer rule on page(s)', rep.ruled.join(', '));
@@ -68,15 +73,107 @@ async function corner(file) {
     : null;
 }
 
+const iisNoEl = document.getElementById('iisNo');
+const fileEl = document.getElementById('sealFile');
+
+// The pre-flight for the file currently chosen. Cleared whenever the choice
+// changes, so a stale reading can never be sealed against the wrong document.
+let readFor = null;
+
+/** How the number was found, so confirming it is a real check and not a reflex. */
+function evidence(c) {
+  const where =
+    c.pages.length === 1
+      ? `page ${c.pages[0]}`
+      : c.pages.length === 2
+        ? `pages ${c.pages.join(' and ')}`
+        : `all ${c.pages.length} pages`;
+  return `Found on ${where}, ${c.labelled ? 'labelled “Control No.”' : 'unlabelled'}.`;
+}
+
+fileEl.addEventListener('change', async () => {
+  readFor = null;
+  const file = fileEl.files[0];
+  if (!file) return;
+
+  card(
+    'var(--stamp-slate)', '…', 'Reading', 'Reading the document', '—',
+    'Looking for its control number, and checking IIS through the document’s QR if the text does not say…'
+  );
+  const rep = await readDocument(file);
+  readFor = { file, rep };
+
+  // Answered by IIS, through the QR printed on the document. This is the only
+  // way for a Special Order, whose own text leaves the number blank.
+  if (rep?.source === 'iis' && rep.iisNo) {
+    iisNoEl.value = rep.iisNo;
+    const r = rep.record || {};
+    const detail = [
+      r.subject ? `Subject: ${r.subject}` : null,
+      r.division ? `Division: ${r.division}` : null,
+      r.status ? `Status: ${r.status}` : null,
+    ].filter(Boolean);
+    return card(
+      'var(--stamp-slate)', 'Confirm', 'From IIS', 'Confirm this control number', rep.iisNo,
+      'Read from IIS via the QR printed on this document. Check the subject matches the document in your hand, then press Seal.',
+      detail.map((d) => `<p class="doc-msg">${esc(d)}</p>`).join('')
+    );
+  }
+
+  const best = rep?.source === 'text' ? rep.candidates?.[0] : null;
+  if (!best) {
+    iisNoEl.value = '';
+    const why = rep?.lookup?.reason;
+    const [eyebrow, msg] =
+      why === 'unreachable'
+        ? ['Could not reach IIS', 'The control number is not written in this document, and IIS could not be reached to look it up. Check the connection, or type the number to seal.']
+        : why === 'no-record'
+          ? ['IIS has no record for this document', 'The QR on this document resolved, but IIS returned no transaction for it. Check it is the right file, or type the number to seal.']
+          : ['No control number in the document', 'Nothing shaped like R1-2026-010734 was found in the text, and no IIS QR was found either. Check it is the right file, then type the number to seal.'];
+    return card('var(--stamp-amber)', 'Type it', 'Not found', eyebrow, '—', msg);
+  }
+
+  iisNoEl.value = best.iisNo;
+  // More than one distinct number means the document cites others. Show them
+  // rather than choosing quietly — this is the field every page seal binds to.
+  const others = rep.candidates.slice(1);
+  const extra = others.length
+    ? `<p class="doc-msg">Also found: ${others
+        .map((c) => `<button type="button" class="link-btn" data-pick="${esc(c.iisNo)}">${esc(c.iisNo)}</button>`)
+        .join(' ')}</p>`
+    : '';
+  card(
+    others.length ? 'var(--stamp-amber)' : 'var(--stamp-slate)',
+    others.length ? 'Check' : 'Confirm',
+    others.length ? `${rep.candidates.length} found` : 'Found',
+    others.length ? 'More than one number in this document' : 'Confirm this control number',
+    best.iisNo,
+    evidence(best) + ' Press Seal to confirm, or correct it above.',
+    extra
+  );
+});
+
+// Picking one of the other numbers found in the document.
+resultEl.addEventListener('click', (e) => {
+  const pick = e.target.closest('[data-pick]');
+  if (!pick) return;
+  iisNoEl.value = pick.dataset.pick;
+  card('var(--stamp-slate)', 'Confirm', 'Chosen', 'Confirm this control number', pick.dataset.pick,
+    'Taken from the other numbers found in the document. Press Seal to confirm.');
+});
+
 document.getElementById('sealForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const iisNo = document.getElementById('iisNo').value.trim();
-  const file = document.getElementById('sealFile').files[0];
-  if (!iisNo) return card('var(--stamp-amber)', 'Wait', 'Missing', 'Control number required', '—', 'Enter the IIS control number first.');
-  if (!file) return card('var(--stamp-amber)', 'Wait', 'Missing', 'No file', iisNo, 'Choose the signed PDF to seal.');
+  const iisNo = iisNoEl.value.trim();
+  const file = fileEl.files[0];
+  if (!file) return card('var(--stamp-amber)', 'Wait', 'Missing', 'No file', iisNo || '—', 'Choose the signed PDF to seal.');
+  if (!iisNo) return card('var(--stamp-amber)', 'Wait', 'Missing', 'Control number required', '—', 'None was found in the document — type the IIS control number to seal.');
 
   card('var(--stamp-slate)', '…', 'Checking', 'Checking the corner', iisNo, 'Looking for anything the seal would cover…');
-  const place = await corner(file);
+  // Reuse the reading taken when the file was chosen; only re-read if the file
+  // changed underneath us.
+  const rep = readFor && readFor.file === file ? readFor.rep : await readDocument(file);
+  const place = corner(rep);
   if (!place) {
     return card(
       'var(--stamp-amber)', 'Stopped', 'Not sealed', 'Sealing cancelled', iisNo,
