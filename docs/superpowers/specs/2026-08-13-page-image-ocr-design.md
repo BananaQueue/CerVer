@@ -206,17 +206,30 @@ POST /api/verify-page-image     multipart: image, doc, k   (bodyLimit 12 MB)
 The 12 MB limit and the multipart handling follow `/api/frame` and
 `/api/verify-document`, which already take large uploads on named routes only.
 
-Disclosure follows the existing `path === 'staff'` gate in
-[`pageVerifier.js`](../../../src/pageVerifier.js):
+### No disclosure gate
 
-- **staff** — full report: `expected` and `found` on every finding, both texts
-  available for side-by-side.
-- **public** — status, similarity, finding count, and each finding's class and
-  position. **`expected` is withheld.**
+**One report, the same for every caller.** An earlier draft of this design
+withheld `expected` from non-staff callers, on the theory that a forger could
+otherwise ask the server what the page should say. That is dropped, for two
+reasons.
 
-The public reader is holding the paper and already has what it says. What public
-mode withholds is what it *should* say — so a doctored page plus a photo cannot
-be used to interrogate the server for the wording needed to improve the forgery.
+The `staff=1` flag was a query parameter set by a checkbox on the public page —
+anyone could tick it. It never authenticated anyone. It is being removed from
+`/api/verify-page`, `pageVerifier`, and the UI in the same period this design
+was written, on exactly that ground.
+
+And the threat it was meant to answer does not survive the routes as they stand.
+`/api/page-image?doc=…&k=…` serves the **entire authoritative page** to any
+caller, ungated, and `/api/pages/:iisNo` lists every page's printed footer. That
+is deliberate — the cross-reference exists so a person holding paper can read
+the real page. Withholding one `expected` string from a report while serving the
+whole page one route over is not protection; it is the appearance of protection,
+paid for in usefulness.
+
+If page content should be restricted, that is real authentication across every
+route that serves it, and it is out of scope here (§11). Half a gate on one
+route is worse than none, because it invites the belief that the content is
+guarded.
 
 Each request logs to `verify_log` with outcome `page_image_<status>`, path, and
 client hint, matching how `verifyPage` and `verifyDocument` already log. The
@@ -247,9 +260,18 @@ process as everything else.
 **It must be pinned to local language data.** By default it fetches
 `eng.traineddata` from a CDN on first use, which would make verification depend
 on the internet and fail closed in exactly the offline setting this app is built
-for. The data file is vendored beside `public/vendor/pdfjs` and
-`public/vendor/html5-qrcode`, which are vendored for the same reason. Roughly
-15 MB.
+for. The file is committed to the repository and `langPath` points at it, in the
+same spirit as the vendored `pdfjs` and `html5-qrcode`.
+
+It goes in **`vendor/tesseract/`** at the repository root — *not* `public/vendor/`.
+`public/` is statically served to every browser, and this data is read only by
+the server; putting it there would ship a multi-megabyte file to every phone
+that loads the scan page and never use it.
+
+Use the `_fast` traineddata variant, which is a few megabytes rather than the
+tens of megabytes of the full model, and is the accuracy tier tesseract.js
+defaults to anyway. The exact committed size is recorded in the plan's setup
+task, measured rather than estimated.
 
 English only. EMB documents are in English; adding Filipino language data is a
 later decision with its own accuracy question, not a free flag.
@@ -318,8 +340,11 @@ how the synthetic tests read.
   annotations are invisible to this check.
 - **Tolerant-class findings are weak.** A name mismatch may be OCR and usually
   is. It is reported below the material findings and worded as such.
-- **The 15 MB vendored language data** is a real repository and deployment cost,
-  paid so that verification does not depend on the internet.
+- **The committed language data** is a real repository cost, paid so that
+  verification does not depend on the internet.
+- **Thresholds ship provisional.** §9.2 cannot be satisfied until real
+  photographs exist, so the constants land uncalibrated and clearly named as
+  such. The feature is not announced to staff until they are measured.
 
 ## 11. Out of scope
 
@@ -329,6 +354,10 @@ how the synthetic tests read.
   stroke-tolerant decoder is the current answer to hard reads.
 - **Layout / visual diff** of the photograph against a render of the record page.
 - **Filipino language data.**
+- **Authentication for page-content routes.** `/api/page-image` and
+  `/api/pages/:iisNo` are ungated by design, and this feature adds no new
+  exposure — it reports on a page the same caller can already fetch in full. If
+  that changes, it changes for all of them at once, not here.
 - **Retaining uploaded images** for later review or as an audit trail. Nothing
   in the current design keeps them, and keeping document photographs is a
   records-retention decision, not an implementation one.
