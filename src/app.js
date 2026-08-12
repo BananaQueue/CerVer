@@ -51,7 +51,6 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
 
   // ---- Single page-seal verification ----
   app.get('/api/verify-page', async (req) => {
-    const staff = req.query.staff === '1' || req.query.staff === 'true';
     const input = req.query.line
       ? req.query.line
       : {
@@ -62,7 +61,7 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
           seal: req.query.seal,
         };
     return pageVerify(input, {
-      path: staff ? 'staff' : 'public',
+      path: 'public',
       clientHint: req.headers['user-agent'] ?? null,
     });
   });

@@ -576,12 +576,10 @@ async function submitPageVerify() {
     return;
   }
 
-  const staff = document.getElementById('pageStaff').checked ? '&staff=1' : '';
   renderPageResult({ status: 'loading' });
   try {
     const res = await fetch(
-      `/api/verify-page?doc=${encodeURIComponent(doc)}&k=${encodeURIComponent(k)}&seal=${encodeURIComponent(seal)}` +
-        staff
+      `/api/verify-page?doc=${encodeURIComponent(doc)}&k=${encodeURIComponent(k)}&seal=${encodeURIComponent(seal)}`
     );
     const data = await res.json();
     data._seal = seal;

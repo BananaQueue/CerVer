@@ -733,7 +733,7 @@ console.log('OK');
 // Language data is vendored (vendor/tesseract/) and langPath points at it, so
 // nothing is fetched at runtime. See spec §8.
 import { createWorker } from 'tesseract.js';
-import { ocrLangPath } from './config.js';
+import config from './config.js';
 
 let workerPromise = null;
 
@@ -742,9 +742,9 @@ let workerPromise = null;
 function worker() {
   if (!workerPromise) {
     workerPromise = createWorker('eng', 1, {
-      langPath: ocrLangPath,
+      langPath: config.ocrLangPath,
       gzip: false, // the vendored file is uncompressed
-      cachePath: ocrLangPath,
+      cachePath: config.ocrLangPath,
     });
   }
   return workerPromise;
@@ -772,19 +772,13 @@ export async function shutdownOcr() {
 
 - [ ] **Step 6: Add `ocrLangPath` to `src/config.js`**
 
-`config.js` exports one default object of `path.resolve`d values with `CERVER_*` env overrides. Add a line to it, keeping that shape:
+`config.js` exports one default object of `path.resolve`d values with `CERVER_*` env overrides, and `src/app.js` reads it as `config.iisBaseUrl`. Add a line inside that object, keeping the shape:
 
 ```js
   ocrLangPath: process.env.CERVER_OCR_LANGPATH || path.resolve('vendor', 'tesseract'),
 ```
 
-`src/ocr.js` imports it as a named binding off the default export, matching how `src/app.js` reads `config.iisBaseUrl`. Adjust the import in `src/ocr.js` from `import { ocrLangPath } from './config.js'` to:
-
-```js
-import config from './config.js';
-```
-
-and use `config.ocrLangPath` in both `langPath` and `cachePath`.
+No new export style — `src/ocr.js` already imports the default object and reads `config.ocrLangPath`.
 
 - [ ] **Step 7: Run the smoke test**
 

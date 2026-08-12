@@ -397,14 +397,6 @@ input:focus-visible,
 .pg-two > div { flex: 1; min-width: 0; }
 .pg-two > div:first-child { flex: 0 0 5.5rem; }
 .pg-tip { margin: 0 0 0.9rem; font-size: 0.78rem; color: var(--muted); }
-.staff-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  margin-bottom: 0.9rem;
-}
 #pageForm .btn-primary, #docForm .btn-primary { width: 100%; }
 
 /* ---- Document report ---- */

@@ -53,10 +53,19 @@ test('verifies with only control number, page, and seal (no n/kid)', async () =>
   assert.equal(r.n, 3); // total pages filled in from the record
 });
 
-test('staff path exposes authoritative page pointer', async () => {
+// There used to be a "staff" path here that additionally returned a pointer to
+// the sealed PDF on disk. It was reached by a checkbox anyone could tick, and the
+// page content it guarded is served to everyone anyway by the page
+// cross-reference (`/api/pages/:iisNo` and its Compare button) — that is the
+// point of the cross-reference. So the distinction bought nothing and leaked a
+// server filesystem path. The result no longer varies by caller.
+test('the result never carries a server filesystem path', async () => {
   const { db, footer } = await seed();
   const verify = createPageVerifier({ db, keyProvider: kp });
-  const r = verify(formatFooter(footer), { path: 'staff' });
-  assert.equal(r.status, 'page_verified');
-  assert.equal(r.authoritative.pageNo, 2);
+  for (const path of ['public', 'staff', undefined]) {
+    const r = verify(formatFooter(footer), path ? { path } : undefined);
+    assert.equal(r.status, 'page_verified');
+    assert.equal(r.authoritative, undefined, `path=${path}`);
+    assert.ok(!JSON.stringify(r).includes('sealed_pdf'), `path=${path} leaks a path`);
+  }
 });

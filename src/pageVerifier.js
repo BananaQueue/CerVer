@@ -63,10 +63,11 @@ export function createPageVerifier({ db, keyProvider }) {
     }
 
     log('page_verified', iisNo);
-    const result = { status: 'page_verified', iisNo, k, n };
-    if (path === 'staff') {
-      result.authoritative = { sealedPdfPath: row.sealed_pdf_path, pageNo: k };
-    }
-    return result;
+    // The same answer for everyone. A "staff" variant used to add a pointer to
+    // the sealed PDF on disk, but the page it referred to is served to every
+    // caller anyway by the page cross-reference — so it bought nothing and put a
+    // server filesystem path in a public response. `path` is still recorded in
+    // verify_log; it no longer changes what comes back.
+    return { status: 'page_verified', iisNo, k, n };
   };
 }
