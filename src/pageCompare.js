@@ -26,11 +26,16 @@ export function foldGlyphs(token) {
     .join('');
 }
 
+// Escapes, not literal characters, in both the fold and the tests that exercise
+// it. A curly quote and an ASCII one are a pixel apart in most editors, so a
+// literal cannot be reviewed by eye and does not survive being copied — the
+// first implementation of this transcribed U+2018/U+2019 as ASCII apostrophes
+// and weakened this test to straight quotes, and it passed against a dead fold.
 const PUNCT_FOLD = [
-  [/[''‛]/g, "'"],
-  [/[""‟]/g, '"'],
-  [/[‐-―−]/g, '-'],
-  [/ /g, ' '],
+  [/[\u2018\u2019\u201B]/g, "'"],
+  [/[\u201C\u201D\u201F]/g, '"'],
+  [/[\u2010-\u2015\u2212]/g, '-'],
+  [/\u00A0/g, ' '],
 ];
 
 // Lower-cased whitespace-separated words, footer removed. Case is folded because
