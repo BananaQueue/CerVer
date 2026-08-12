@@ -101,8 +101,12 @@ Word-level alignment ratio between the two normalized word sequences:
 similarity = 2 * |LCS(a, b)| / (|a| + |b|)
 ```
 
-Symmetric, so a photo that drops words and one that invents them are penalised
-alike. One number.
+Symmetric in its arguments, and neither dropping words nor inventing them is
+free — both pull the score below 1. (They are not weighted identically: an
+invented word also grows the denominator, so an insertion costs slightly less
+than a deletion. That asymmetry is inherent to the measure and is not worth
+correcting for, since Tier 1 only has to separate "same page" from "not this
+page".) One number.
 
 Its purpose is to separate *this is page 3, photographed imperfectly* from
 *this is not page 3*. A page substituted wholesale from another document — the
