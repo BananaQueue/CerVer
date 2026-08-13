@@ -270,9 +270,15 @@ test('extractTokens records the 1-based line each token sits on', () => {
   assert.equal(t.find((x) => x.cls === 'money').line, 2);
 });
 
-test('a name adjacent to a citation is not swallowed by it', () => {
-  const t = extractTokens('SECTION 12 ACME MINING CORP shall comply.');
-  assert.deepEqual(byClass(t, 'citation'), ['SECTION 12']);
+// The citation must contain NO DIGITS for this to bite. The name pattern is
+// [A-Z][A-Z&.'-]+ and cannot cross the digits in 'Section 12', so that input
+// never collides and the test would pass with or without masking. A Roman
+// numeral IS matched by the name class, so the run spans the citation.
+// Verified against a reconstruction of the discard logic: this input differs
+// between the two, 'SECTION 12 ACME MINING CORP' does not.
+test('a name adjacent to a digitless citation is not swallowed by it', () => {
+  const t = extractTokens('Rule III ACME MINING CORP shall comply.');
+  assert.deepEqual(byClass(t, 'citation'), ['Rule III']);
   assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORP']);
 });
 
@@ -331,9 +337,11 @@ export function extractTokens(text) {
       const line = stripFooter(raw);
       // Blank out what earlier (more specific) classes already claimed, so a
       // greedy pattern cannot run straight through a claimed span. Masking
-      // rather than discarding the whole match: "SECTION 12 ACME MINING CORP"
-      // used to lose ACME MINING CORP entirely, because the name run spanned
-      // the citation and the whole match was dropped for overlapping it.
+      // rather than discarding the whole match: "Rule III ACME MINING CORP"
+      // used to lose ACME MINING CORP entirely, because III is itself matched
+      // by the name class, so the run spanned the citation and the whole match
+      // was dropped for overlapping it. (A citation WITH digits never collides:
+      // the name pattern cannot cross them.)
       const masked = maskClaimed(line, claimed[i]);
       re.lastIndex = 0;
       let m;
