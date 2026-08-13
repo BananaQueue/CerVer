@@ -106,9 +106,11 @@ export function extractTokens(text) {
       const line = stripFooter(raw);
       // Blank out what earlier (more specific) classes already claimed, so a
       // greedy pattern cannot run straight through a claimed span. Masking
-      // rather than discarding the whole match: "SECTION 12 ACME MINING CORP"
-      // used to lose ACME MINING CORP entirely, because the name run spanned
-      // the citation and the whole match was dropped for overlapping it.
+      // rather than discarding the whole match: "Rule III ACME MINING CORP"
+      // used to lose ACME MINING CORP entirely, because III is itself matched
+      // by the name class, so the run spanned the citation and the whole match
+      // was dropped for overlapping it. (A citation WITH digits never collides:
+      // the name pattern cannot cross them.)
       const masked = maskClaimed(line, claimed[i]);
       re.lastIndex = 0;
       let m;

@@ -97,9 +97,15 @@ test('extractTokens ignores the seal footer', () => {
   assert.deepEqual(byClass(t, 'reference'), []);
 });
 
-test('a name adjacent to a citation is not swallowed by it', () => {
-  const t = extractTokens('SECTION 12 ACME MINING CORP shall comply.');
-  assert.deepEqual(byClass(t, 'citation'), ['SECTION 12']);
+// The citation must contain NO DIGITS for this to bite. The name pattern is
+// [A-Z][A-Z&.'-]+ and cannot cross the digits in 'Section 12', so that input
+// never collides and the test would pass with or without masking. A Roman
+// numeral IS matched by the name class, so the run spans the citation.
+// Verified against a reconstruction of the discard logic: this input differs
+// between the two, 'SECTION 12 ACME MINING CORP' does not.
+test('a name adjacent to a digitless citation is not swallowed by it', () => {
+  const t = extractTokens('Rule III ACME MINING CORP shall comply.');
+  assert.deepEqual(byClass(t, 'citation'), ['Rule III']);
   assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORP']);
 });
 
