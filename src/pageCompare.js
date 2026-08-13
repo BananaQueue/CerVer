@@ -35,8 +35,12 @@ const PUNCT_FOLD = [
   [/[\u2018\u2019\u201B]/g, "'"],
   [/[\u201C\u201D\u201F]/g, '"'],
   [/[\u2010-\u2015\u2212]/g, '-'],
-  [/\u00A0/g, ' '],
 ];
+
+// No non-breaking-space rule: JS regex \s already matches U+00A0, and
+// normalizeWords splits on /\s+/ below, so a fold for it would be
+// unobservable \u2014 and therefore could never be regression-tested, which is
+// exactly the property the rules above were just fixed to have.
 
 // Lower-cased whitespace-separated words, footer removed. Case is folded because
 // tamper detection does not turn on it and OCR case errors are common.
