@@ -117,3 +117,104 @@ test('no strict-class token is lost to an adjacent match', () => {
   assert.deepEqual(byClass(t, 'reference'), ['R1-2026-010734']);
   assert.deepEqual(byClass(t, 'date'), ['2026-01-15']);
 });
+
+import { compare } from '../src/pageCompare.js';
+
+const AUTH = [
+  'ORDER OF THE REGIONAL DIRECTOR',
+  'Issued to ACME MINING CORPORATION on 15 January 2026.',
+  'A fine of ₱50,000.00 is imposed under Section 12.',
+  'The respondent shall comply within 15 days of receipt.',
+].join('\n');
+
+const materials = (r) => r.findings.filter((f) => f.severity === 'material');
+
+test('a clean reading finds nothing material', () => {
+  const r = compare(AUTH, AUTH);
+  assert.equal(r.status, 'compared');
+  assert.deepEqual(materials(r), []);
+});
+
+test('realistic OCR noise in words alone finds nothing material', () => {
+  const noisy = AUTH.replace('respondent', 'respondenl').replace('receipt', 'receipl');
+  const r = compare(noisy, AUTH);
+  assert.equal(r.status, 'compared');
+  assert.deepEqual(materials(r), []);
+});
+
+test('an inflated amount is material, reason digit-count', () => {
+  const r = compare(AUTH.replace('₱50,000.00', '₱500,000.00'), AUTH);
+  const f = materials(r).find((x) => x.cls === 'money');
+  assert.ok(f, 'expected a money finding');
+  assert.equal(f.reason, 'digit-count');
+  assert.equal(f.expected, '₱50,000.00');
+  assert.equal(f.found, '₱500,000.00');
+  assert.equal(f.line, 3);
+});
+
+test('a changed duration is material, reason digit-substitution', () => {
+  const r = compare(AUTH.replace('15 days', '45 days'), AUTH);
+  const f = materials(r).find((x) => x.cls === 'duration');
+  assert.ok(f, 'expected a duration finding');
+  assert.equal(f.reason, 'digit-substitution');
+  assert.equal(f.expected, '15 days');
+});
+
+test('letter-for-digit OCR noise in an amount is suppressed, not reported', () => {
+  const r = compare(AUTH.replace('₱50,000.00', '₱5O,OOO.OO'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('an amount the record does not carry is material, reason added', () => {
+  const r = compare(AUTH + '\nAn extra fee of ₱9,999.00 applies.', AUTH);
+  const f = materials(r).find((x) => x.reason === 'added');
+  assert.ok(f, 'expected an added-token finding');
+  assert.equal(f.found, '₱9,999.00');
+  assert.equal(f.expected, null);
+  assert.equal(f.line, null);
+});
+
+test('an amount dropped from the photo is material, reason missing', () => {
+  const r = compare(AUTH.replace('A fine of ₱50,000.00 is imposed under Section 12.', 'A fine is imposed.'), AUTH);
+  const f = materials(r).find((x) => x.reason === 'missing');
+  assert.ok(f, 'expected a missing-token finding');
+  assert.equal(f.found, null);
+});
+
+test('a name with two character errors is tolerant, not material', () => {
+  const r = compare(AUTH.replace('ACME MINING CORPORATION', 'ACME MlNING CORPORATlON'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('Rule III read as Rule Ill is not a finding', () => {
+  const auth = 'Issued under Rule III of the implementing rules.';
+  const r = compare(auth.replace('Rule III', 'Rule Ill'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a wholly different page is page_differs and reports no token findings', () => {
+  // Long enough to clear THRESHOLDS.minWords on its own -- the brief's original
+  // one-sentence fixture (11 words) fell below minWords (20) and was caught by
+  // the image_unreadable gate before the similarity check ever ran, so it never
+  // actually exercised page_differs. Extended here, same "unrelated page" intent,
+  // to make the test test what its name says. See task-3-report.md.
+  const other = 'CERTIFICATE OF NON-COVERAGE\nThis project is not covered by the system. '
+    + 'It was inspected and evaluated by the regional office, and found to require '
+    + 'no permit, clearance, or further environmental review under the applicable guidelines.';
+  const r = compare(other, AUTH);
+  assert.equal(r.status, 'page_differs');
+  assert.deepEqual(r.findings, []);
+});
+
+test('empty OCR output is image_unreadable, not a finding about the page', () => {
+  for (const empty of ['', '   \n  ', 'a b']) {
+    const r = compare(empty, AUTH);
+    assert.equal(r.status, 'image_unreadable', JSON.stringify(empty));
+    assert.deepEqual(r.findings, []);
+  }
+});
+
+test('suppressed counts the differences attributed to noise', () => {
+  const noisy = AUTH.replace('respondent', 'respondenl').replace('receipt', 'receipl');
+  assert.ok(compare(noisy, AUTH).suppressed > 0);
+});
