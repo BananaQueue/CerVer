@@ -189,7 +189,32 @@ export function similarity(a, b) {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+> **The shipped implementation diverges from the code above.** Review found six
+> defects in it, five of them in this block as written. Fixed in ; the
+> code in  is authoritative, not this listing. In short:
+>
+> 1. The money pattern requires real digits, so an OCR reading like 
+>    truncated to  before  ever saw it — the letter-for-digit
+>    forgiveness rule was unreachable. A loosened pattern is used OCR-side only.
+> 2. That loosened pattern then invented amounts from the inverse noise:
+>     yielded a phantom  reported as a material added amount,
+>    on an untampered page. Now guarded on both ends.
+> 3.  lowercased before folding, and ’s keys are uppercase —
+>    so 8 of 11 entries were dead in the key path while  folded
+>    original case. Folds before lowercasing now.
+> 4.  was a no-op for the same reason, so  read as
+>     WAS a finding — the standing false positive §5.3 exists to
+>    prevent. Its test passed vacuously on an 8-word fixture that never cleared
+>    .  handles citations;  is deleted.
+> 5. The photo→record pass tested key PRESENCE, not count, so a duplicated
+>    amount on the photo produced zero findings — a false negative on a strict
+>    class. It consumes now, like the other direction.
+> 6.  took the first unmatched same-class token in document order and
+>    never consumed it, so several record tokens claimed one photo token and
+>    reported each other’s values and reasons. Nearest by line, consumed.
+
+Thresholds were NOT touched for any of this.
+- [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
 node --test test/pageCompare.test.js
