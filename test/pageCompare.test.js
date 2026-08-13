@@ -96,3 +96,18 @@ test('extractTokens ignores the seal footer', () => {
   const t = extractTokens('Body. EMB · R1-2026-010734 · p3/7 · K1 · TQQ3-MTBT');
   assert.deepEqual(byClass(t, 'reference'), []);
 });
+
+test('a name adjacent to a citation is not swallowed by it', () => {
+  const t = extractTokens('SECTION 12 ACME MINING CORP shall comply.');
+  assert.deepEqual(byClass(t, 'citation'), ['SECTION 12']);
+  assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORP']);
+});
+
+test('no strict-class token is lost to an adjacent match', () => {
+  const t = extractTokens('Fine ₱5,000.00 within 30 days under Section 12 per R1-2026-010734 on 2026-01-15.');
+  assert.deepEqual(byClass(t, 'money'), ['₱5,000.00']);
+  assert.deepEqual(byClass(t, 'duration'), ['30 days']);
+  assert.deepEqual(byClass(t, 'citation'), ['Section 12']);
+  assert.deepEqual(byClass(t, 'reference'), ['R1-2026-010734']);
+  assert.deepEqual(byClass(t, 'date'), ['2026-01-15']);
+});

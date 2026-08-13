@@ -101,21 +101,34 @@ export function extractTokens(text) {
   const out = [];
   const claimed = rawLines.map(() => []);
 
-  const overlaps = (spans, start, end) => spans.some(([s, e]) => start < e && end > s);
-
   for (const [cls, re] of TOKEN_PATTERNS) {
     rawLines.forEach((raw, i) => {
       const line = stripFooter(raw);
+      // Blank out what earlier (more specific) classes already claimed, so a
+      // greedy pattern cannot run straight through a claimed span. Masking
+      // rather than discarding the whole match: "SECTION 12 ACME MINING CORP"
+      // used to lose ACME MINING CORP entirely, because the name run spanned
+      // the citation and the whole match was dropped for overlapping it.
+      const masked = maskClaimed(line, claimed[i]);
       re.lastIndex = 0;
       let m;
-      while ((m = re.exec(line)) !== null) {
-        const start = m.index;
-        const end = start + m[0].length;
-        if (overlaps(claimed[i], start, end)) continue;
-        claimed[i].push([start, end]);
+      while ((m = re.exec(masked)) !== null) {
+        claimed[i].push([m.index, m.index + m[0].length]);
         out.push({ cls, value: m[0], line: i + 1 });
       }
     });
   }
   return out.sort((a, b) => a.line - b.line);
+}
+
+// NUL, not a space: patterns match runs of whitespace, so a space mask would
+// still be traversable — a name run would span a masked citation and capture
+// the blanks with it. No pattern can cross a NUL.
+const NUL = String.fromCharCode(0);
+
+function maskClaimed(line, spans) {
+  if (spans.length === 0) return line;
+  const chars = line.split('');
+  for (const [s, e] of spans) for (let j = s; j < e; j++) chars[j] = NUL;
+  return chars.join('');
 }
