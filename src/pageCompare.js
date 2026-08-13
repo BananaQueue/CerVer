@@ -80,15 +80,41 @@ export function similarity(a, b) {
 
 const MONTH = 'January|February|March|April|May|June|July|August|September|October|November|December';
 
+// Letter lookalikes for digits, as a regex character class rather than
+// GLYPH_FOLD's single-character map. Defined here, ahead of TOKEN_PATTERNS,
+// because the citation numeral below needs it to extract a mixed OCR reading
+// (e.g. "1Z", "l2") as a token at all -- only then does keyFor's foldGlyphs
+// get a chance to forgive it. LOOSE_MONEY further down reuses the same class
+// for the same reason, on amounts instead of citations.
+const DIGITISH = '0-9OoQDlI|SBZG';
+
+// A citation numeral's digit-lookalike run must contain at least one of these
+// to count as a numeral at all: a real digit, or the pipe OCR produces for a
+// misread vertical stroke (never an ordinary English letter). Without this
+// anchor, "Section OF", "Rule OB", "Article SB" and "Sec. GO" -- ordinary
+// capitalised words that happen to be spelled entirely from DIGITISH's
+// letters -- would each read as a phantom citation.
+const CITATION_ANCHOR = '0-9|';
+
 // Order matters: the first pattern to claim a span wins, so the more specific
 // classes are listed before the looser ones. `name` is last because a run of
 // capitals would otherwise swallow "Section 12" style citations.
+//
+// The numeral accepts a pure Roman-numeral run (unchanged) or a DIGITISH run
+// anchored by at least one real digit or pipe, so a mixed OCR reading like
+// "Section 1Z" or "Rule |||" is extracted as a citation token and folded like
+// money already is -- see docs/superpowers/specs/2026-08-13-page-image-ocr-design.md
+// 5.4. The trailing boundary is a negative lookahead rather than \b: \b needs
+// a word/non-word transition, but a match ending in "|" (non-word on both
+// sides against a following space) has no such transition, so \b would wrongly
+// reject "Rule |||" even though nothing follows it.
+const CITATION_NUMERAL = String.raw`[IVXLC]+|(?=[${DIGITISH}]*[${CITATION_ANCHOR}])[${DIGITISH}]+`;
 const TOKEN_PATTERNS = [
   ['money', new RegExp(String.raw`(?:₱|PHP|P)\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`, 'g')],
   ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
   ['reference', new RegExp(String.raw`\bR\d-\d{4}-\d{6}\b|\bNo\.\s?\d{2}-\d{3,6}\b`, 'g')],
-  ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:[IVXLC]+|\d+)\b`, 'gi')],
+  ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:${CITATION_NUMERAL})(?![A-Za-z0-9])`, 'gi')],
   ['name', new RegExp(String.raw`\b[A-Z][A-Z&.'-]+(?:\s+[A-Z][A-Z&.'-]+)+\b`, 'g')],
 ];
 
@@ -195,7 +221,8 @@ function reasonFor(expected, found) {
 // becomes a phantom money token in the middle of an ordinary name. Requiring
 // a real digit right after the currency mark is what keeps "P" (a common
 // letter on its own) from ever being mistaken for the start of an amount.
-const DIGITISH = '0-9OoQDlI|SBZG';
+// (DIGITISH itself is defined above, ahead of TOKEN_PATTERNS, shared with
+// the citation numeral.)
 
 // The two alternatives below are guarded differently because the currency
 // mark decides the ambiguity, not a rule that can be shared across both.

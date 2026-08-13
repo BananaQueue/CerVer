@@ -282,6 +282,93 @@ test('Rule III read as Rule Ill is not a finding', () => {
   assert.deepEqual(materials(r), []);
 });
 
+// Design spec 5.4: letter-for-digit OCR confusion is forgiven everywhere,
+// including citations. Before the fix, the citation pattern's numeral was
+// (?:[IVXLC]+|\d+) -- an all-Roman or all-digit run, nothing mixed -- so a
+// mixed OCR reading was not extracted as a citation token at all, and the
+// record's "Section 12" reported as missing: a material false positive on a
+// genuine page. These three inputs are the exact failure cases from the task.
+test('Section 12 read as Section 1Z (digit + lookalike) is not a finding', () => {
+  const r = compare(AUTH.replace('Section 12', 'Section 1Z'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('Section 12 read as Section l2 (lookalike + digit) is not a finding', () => {
+  const r = compare(AUTH.replace('Section 12', 'Section l2'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('Rule III read as Rule ||| (lookalike-only) is not a finding', () => {
+  // Padded past THRESHOLDS.minWords for the same reason as the Ill test above.
+  const auth = 'Issued under Rule III of the implementing rules, per the applicable '
+    + 'regional office guidelines and procedures currently in full effect for this case.';
+  const r = compare(auth.replace('Rule III', 'Rule |||'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Governing rule: widening the tokenizer must not weaken digit-count or
+// digit-substitution -- those stay material even though the fold now runs.
+test('Section 12 vs Section 13 is material, reason digit-substitution', () => {
+  const r = compare(AUTH.replace('Section 12', 'Section 13'), AUTH);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.reason, 'digit-substitution');
+  assert.equal(f.expected, 'Section 12');
+  assert.equal(f.found, 'Section 13');
+});
+
+test('Section 12 vs Section 120 is material, reason digit-count', () => {
+  const r = compare(AUTH.replace('Section 12', 'Section 120'), AUTH);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.reason, 'digit-count');
+  assert.equal(f.expected, 'Section 12');
+  assert.equal(f.found, 'Section 120');
+});
+
+// Genuinely different Roman-numeral citations must still be caught -- the
+// widened numeral must not blur distinct citations together.
+test('Rule IV vs Rule VI is still material', () => {
+  const auth = 'Issued under Rule IV of the implementing rules, per the applicable '
+    + 'regional office guidelines and procedures currently in full effect for this case.';
+  const r = compare(auth.replace('Rule IV', 'Rule VI'), auth);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.expected, 'Rule IV');
+  assert.equal(f.found, 'Rule VI');
+});
+
+test('Rule IX vs Rule XI is still material', () => {
+  const auth = 'Issued under Rule IX of the implementing rules, per the applicable '
+    + 'regional office guidelines and procedures currently in full effect for this case.';
+  const r = compare(auth.replace('Rule IX', 'Rule XI'), auth);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.expected, 'Rule IX');
+  assert.equal(f.found, 'Rule XI');
+});
+
+test('Section XII vs Section XIII is still material', () => {
+  const auth = 'Issued under Section XII of the implementing rules, per the applicable '
+    + 'regional office guidelines and procedures currently in full effect for this case.';
+  const r = compare(auth.replace('Section XII', 'Section XIII'), auth);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.expected, 'Section XII');
+  assert.equal(f.found, 'Section XIII');
+});
+
+// False-positive sweep: a keyword followed by an ordinary capitalised word
+// (not a numeral) must not become a phantom citation just because every
+// letter in the word happens to be a digit lookalike.
+test('citation numeral widening does not fabricate citations from ordinary capitalised words', () => {
+  const t = extractTokens(
+    'Section OF THE ORDER shall apply. Rule OB was not followed. '
+    + 'Article SB governs this matter. Sec. GO to the office immediately please.'
+  );
+  assert.deepEqual(byClass(t, 'citation'), []);
+});
+
 test('a wholly different page is page_differs and reports no token findings', () => {
   // Long enough to clear THRESHOLDS.minWords on its own -- the brief's original
   // one-sentence fixture (11 words) fell below minWords (20) and was caught by
