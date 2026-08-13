@@ -77,3 +77,45 @@ export function similarity(a, b) {
   if (total === 0) return 1;
   return (2 * lcsLength(a, b)) / total;
 }
+
+const MONTH = 'January|February|March|April|May|June|July|August|September|October|November|December';
+
+// Order matters: the first pattern to claim a span wins, so the more specific
+// classes are listed before the looser ones. `name` is last because a run of
+// capitals would otherwise swallow "Section 12" style citations.
+const TOKEN_PATTERNS = [
+  ['money', new RegExp(String.raw`(?:₱|PHP|P)\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`, 'g')],
+  ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
+  ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
+  ['reference', new RegExp(String.raw`\bR\d-\d{4}-\d{6}\b|\bNo\.\s?\d{2}-\d{3,6}\b`, 'g')],
+  ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:[IVXLC]+|\d+)\b`, 'gi')],
+  ['name', new RegExp(String.raw`\b[A-Z][A-Z&.'-]+(?:\s+[A-Z][A-Z&.'-]+)+\b`, 'g')],
+];
+
+// Tokens the record carries that must survive in the photo, each tied to the
+// line it sits on so a finding can point somewhere on the sheet.
+export function extractTokens(text) {
+  // stripFooter canonicalizes whitespace, which would destroy line structure —
+  // so split first and strip the footer per line, keeping line numbers intact.
+  const rawLines = String(text ?? '').split('\n');
+  const out = [];
+  const claimed = rawLines.map(() => []);
+
+  const overlaps = (spans, start, end) => spans.some(([s, e]) => start < e && end > s);
+
+  for (const [cls, re] of TOKEN_PATTERNS) {
+    rawLines.forEach((raw, i) => {
+      const line = stripFooter(raw);
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(line)) !== null) {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (overlaps(claimed[i], start, end)) continue;
+        claimed[i].push([start, end]);
+        out.push({ cls, value: m[0], line: i + 1 });
+      }
+    });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}

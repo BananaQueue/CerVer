@@ -52,3 +52,47 @@ test('foldGlyphs never changes one digit into another', () => {
   assert.equal(foldGlyphs('45'), '45');
   assert.equal(foldGlyphs('500,000'), '500,000');
 });
+
+import { extractTokens } from '../src/pageCompare.js';
+
+const byClass = (toks, cls) => toks.filter((t) => t.cls === cls).map((t) => t.value);
+
+test('extractTokens finds money in its several written forms', () => {
+  const t = extractTokens('A fine of ₱50,000.00 and PHP 1,200 and P300.50 applies.');
+  assert.deepEqual(byClass(t, 'money'), ['₱50,000.00', 'PHP 1,200', 'P300.50']);
+});
+
+test('extractTokens finds numeric and worded dates', () => {
+  const t = extractTokens('Issued 01/15/2026, effective 2026-01-15, signed 15 January 2026.');
+  assert.deepEqual(byClass(t, 'date'), ['01/15/2026', '2026-01-15', '15 January 2026']);
+});
+
+test('extractTokens finds durations including calendar days', () => {
+  const t = extractTokens('Comply within 15 days, or 3 months, or 30 calendar days.');
+  assert.deepEqual(byClass(t, 'duration'), ['15 days', '3 months', '30 calendar days']);
+});
+
+test('extractTokens finds control numbers and citations', () => {
+  const t = extractTokens('Per R1-2026-010734 under Section 12 and Rule III.');
+  assert.deepEqual(byClass(t, 'reference'), ['R1-2026-010734']);
+  assert.deepEqual(byClass(t, 'citation'), ['Section 12', 'Rule III']);
+});
+
+test('extractTokens finds runs of two or more capitalised words as names', () => {
+  const t = extractTokens('Issued to ACME MINING CORPORATION by the office.');
+  assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORPORATION']);
+});
+
+test('extractTokens does not call a single capitalised word a name', () => {
+  assert.deepEqual(byClass(extractTokens('The DENR office.'), 'name'), []);
+});
+
+test('extractTokens records the 1-based line each token sits on', () => {
+  const t = extractTokens('first line\nsecond has ₱50,000.00\nthird line');
+  assert.equal(t.find((x) => x.cls === 'money').line, 2);
+});
+
+test('extractTokens ignores the seal footer', () => {
+  const t = extractTokens('Body. EMB · R1-2026-010734 · p3/7 · K1 · TQQ3-MTBT');
+  assert.deepEqual(byClass(t, 'reference'), []);
+});
