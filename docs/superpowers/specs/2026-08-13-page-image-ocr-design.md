@@ -274,8 +274,8 @@ that loads the scan page and never use it.
 
 Use the `_fast` traineddata variant, which is a few megabytes rather than the
 tens of megabytes of the full model, and is the accuracy tier tesseract.js
-defaults to anyway. The exact committed size is recorded in the plan's setup
-task, measured rather than estimated.
+defaults to anyway. The committed file is 4,113,088 bytes, measured rather
+than estimated.
 
 English only. EMB documents are in English; adding Filipino language data is a
 later decision with its own accuracy question, not a free flag.
