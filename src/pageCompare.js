@@ -196,12 +196,30 @@ function reasonFor(expected, found) {
 // a real digit right after the currency mark is what keeps "P" (a common
 // letter on its own) from ever being mistaken for the start of an amount.
 const DIGITISH = '0-9OoQDlI|SBZG';
-// Guarded on both ends: the currency mark cannot start mid-word (?<![A-Za-z0-9])
-// and the amount cannot run straight into letters (?![A-Za-z]) — otherwise an
-// all-caps digit-read-as-letter word like C0RP0RATI0N hands the "P0" inside it
-// to this pattern as a phantom amount, on a page nobody tampered with.
+
+// The two alternatives below are guarded differently because the currency
+// mark decides the ambiguity, not a rule that can be shared across both.
+//
+// ₱ and PHP cannot occur inside an ordinary word — they need no start or
+// trailing guard, and must keep the FULL amount even when OCR glues them to
+// a neighbouring word with no space, e.g. "of₱50,000.00" or "₱50,000.00is".
+//
+// Bare P is an ordinary letter and appears inside real words constantly
+// (C0RP0RATI0N), so it keeps the start guard (?<![A-Za-z0-9]) against
+// matching mid-word. It also still needs a trailing guard against running
+// into more letters -- but a plain trailing lookahead, (?![A-Za-z]), does
+// NOT reject a match on failure; the regex engine just backtracks to a
+// shorter amount that does satisfy it, e.g. "P50,000.00is" would match as
+// "P50,000" instead of being thrown out. That silently produces a phantom
+// digit-count finding on a clean page. Made atomic via (?=(x))\1: the
+// lookahead captures the exact amount once, \1 demands that literal capture
+// immediately after, so there is nothing shorter left to backtrack into --
+// a failure here rejects the whole alternative instead of truncating it.
+const AMOUNT = String.raw`\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`;
 const LOOSE_MONEY = new RegExp(
-  String.raw`(?<![A-Za-z0-9])(?:₱|PHP|P)\s?\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?(?![A-Za-z])`,
+  String.raw`(?:₱|PHP)\s?${AMOUNT}`
+    + '|'
+    + String.raw`(?<![A-Za-z0-9])P\s?(?=(${AMOUNT}))\1(?![A-Za-z])`,
   'g'
 );
 

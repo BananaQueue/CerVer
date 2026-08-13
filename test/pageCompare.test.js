@@ -249,6 +249,28 @@ test('digit-for-letter OCR noise inside an ordinary capitalised word does not fa
   assert.deepEqual(materials(r), []);
 });
 
+test('a lost space before the currency mark does not truncate the amount into a phantom finding', () => {
+  // OCR runs "of" straight into "₱50,000.00" with no space between them.
+  // The old trailing (?![A-Za-z]) guard could not reject a match, only
+  // backtrack it, but here the mark itself has no preceding-word noise to
+  // strip -- the risk this guards is the pattern failing to match the mark
+  // at all when it is glued to the previous word. It must still be read as
+  // the full, undamaged amount.
+  const r = compare(AUTH.replace('of ₱50,000.00', 'of₱50,000.00'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a lost space after the amount does not truncate it into a phantom finding', () => {
+  // OCR runs "₱50,000.00" straight into "is" with no space between them.
+  // The old pattern's trailing (?![A-Za-z]) lookahead does not reject this
+  // match -- it backtracks the engine to the longest prefix that satisfies
+  // the lookahead, i.e. "₱50,000" (dropping ".00is"), which then reads as a
+  // digit-count mismatch against the record's "₱50,000.00": a phantom
+  // material finding on a page nobody tampered with.
+  const r = compare(AUTH.replace('₱50,000.00 is', '₱50,000.00is'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
 test('Rule III read as Rule Ill is not a finding', () => {
   // Padded past THRESHOLDS.minWords (20): the original 8-word fixture fell
   // below the gate, so compare() returned image_unreadable with an empty
