@@ -8,14 +8,76 @@ import config from './config.js';
 
 let workerPromise = null;
 
+// Worker creation must finish within this window. A legitimate first start
+// costs a few seconds (spin up the wasm worker, read the vendored ~4 MB
+// eng.traineddata) and every later call reuses the same worker for free, so
+// 30s leaves generous headroom without risking a false trip on a slow but
+// healthy machine. This only exists to catch a genuinely stalled start: a
+// failure inside tesseract.js's loadLanguage stage is swallowed by an
+// internal `.catch(() => {})` (see
+// node_modules/tesseract.js/src/createWorker.js), so createWorker()'s
+// promise can simply never settle instead of rejecting. Without this
+// timeout that stall would hang every recognize() call forever.
+const WORKER_START_TIMEOUT_MS = 30_000;
+
+function createWorkerWithTimeout() {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const succeed = (w) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(w);
+    };
+
+    const timer = setTimeout(() => {
+      fail(new Error(
+        `OCR engine failed to start: worker creation did not complete within `
+        + `${WORKER_START_TIMEOUT_MS}ms (langPath=${config.ocrLangPath}). The `
+        + 'engine itself could not initialize -- this is not the same as the '
+        + 'engine reading a page and finding no text.',
+      ));
+    }, WORKER_START_TIMEOUT_MS);
+
+    createWorker('eng', 1, {
+      langPath: config.ocrLangPath,
+      gzip: false, // the vendored file is uncompressed
+      // A scratch dir, deliberately not the vendored langPath: on an
+      // api.Init() failure tesseract.js deletes
+      // `${cachePath}/eng.traineddata`, and if cachePath were the vendored
+      // dir that call would delete the working tree's only copy of it.
+      cachePath: config.ocrCachePath,
+      // Without an errorHandler, tesseract.js's internal message handler
+      // rethrows a worker-level error (e.g. loadLanguage failing because
+      // eng.traineddata is missing) SYNCHRONOUSLY as an uncaught exception,
+      // crashing the whole process instead of rejecting the createWorker()
+      // promise (see node_modules/tesseract.js/src/createWorker.js, the
+      // `else { throw Error(data) }` branch). Supplying a handler here turns
+      // that crash into an ordinary rejection we can recover from.
+      errorHandler: (err) => fail(new Error(`OCR engine failed to start: ${err?.message ?? err}`)),
+    }).then(
+      succeed,
+      (err) => fail(new Error(`OCR engine failed to start: ${err?.message ?? err}`)),
+    );
+  });
+}
+
 // Starting a worker costs seconds, so one is shared. Created lazily: a server
 // that never receives a page image never pays for it.
 function worker() {
   if (!workerPromise) {
-    workerPromise = createWorker('eng', 1, {
-      langPath: config.ocrLangPath,
-      gzip: false, // the vendored file is uncompressed
-      cachePath: config.ocrLangPath,
+    // If creation fails, clear workerPromise so the NEXT call gets a fresh
+    // attempt instead of replaying this same rejection forever.
+    workerPromise = createWorkerWithTimeout().catch((err) => {
+      workerPromise = null;
+      throw err;
     });
   }
   return workerPromise;
@@ -27,15 +89,25 @@ export async function recognize(imageBytes) {
   const text = String(data?.text ?? '');
   return {
     text,
-    // tesseract reports 0..100; the rest of the app talks in 0..1.
-    meanConfidence: Number.isFinite(data?.confidence) ? data.confidence / 100 : 0,
+    // tesseract reports 0..100; the rest of the app talks in 0..1. Some
+    // builds report -1 (still Number.isFinite) when nothing was recognized,
+    // so clamp rather than let a blank read report a negative confidence.
+    meanConfidence: Number.isFinite(data?.confidence)
+      ? Math.min(1, Math.max(0, data.confidence / 100))
+      : 0,
     wordCount: text.split(/\s+/).filter(Boolean).length,
   };
 }
 
 export async function shutdownOcr() {
   if (!workerPromise) return;
-  const w = await workerPromise;
-  workerPromise = null;
+  const pending = workerPromise;
+  workerPromise = null; // reset up front: safe to call again immediately, even mid-await
+  let w;
+  try {
+    w = await pending;
+  } catch {
+    return; // creation never succeeded -- nothing to terminate
+  }
   await w.terminate();
 }

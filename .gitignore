@@ -1,4 +1,5 @@
 node_modules/
+.cache/
 cerver.db
 cerver.db-*
 profile/
