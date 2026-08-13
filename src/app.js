@@ -169,6 +169,32 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
     return verifyDocument(db, pdfBytes, { keyProvider: keys, expectedIisNo });
   });
 
+  // ---- Compare a photograph of a printed page against the record ----
+  //
+  // EVIDENCE, NOT PROOF. The seal verifies a page; this reports which values on
+  // the sheet disagree with the page as it was sealed, and never changes a seal
+  // verdict. Same answer for every caller — see spec §6 on why there is no
+  // staff gate here.
+  //
+  // Raised body limit for the same reason /api/frame has one: a phone photo is
+  // megabytes, and Fastify's 1 MB default would reject it as a server error.
+  app.post('/api/verify-page-image', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No image uploaded.' });
+    const iisNo = (data.fields?.doc?.value || '').trim();
+    const k = Number(data.fields?.k?.value);
+    if (!iisNo || !Number.isFinite(k) || k < 1) {
+      return reply.code(400).send({ error: 'Need the control number and page number.' });
+    }
+    const imageBytes = await data.toBuffer();
+    const { verifyPageImage } = await import('./verifyPageImage.js');
+    return verifyPageImage(db, imageBytes, {
+      iisNo,
+      k,
+      clientHint: req.headers['user-agent'] ?? null,
+    });
+  });
+
   // ---- Authoritative page preview (staff) ----
   app.get('/api/page-image', async (req, reply) => {
     const row = db
