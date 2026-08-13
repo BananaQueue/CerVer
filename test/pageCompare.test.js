@@ -165,6 +165,17 @@ test('letter-for-digit OCR noise in an amount is suppressed, not reported', () =
   assert.deepEqual(materials(r), []);
 });
 
+test('letter-for-digit OCR noise using an uppercase-only lookalike (B for 8) is suppressed, not reported', () => {
+  // GLYPH_FOLD's B->8, D->0, Q->0, S->5, Z->2, G->6 entries are uppercase-only
+  // (no lowercase counterpart). keyFor used to lowercase the value before
+  // folding, which silently killed these six of the map's eight letter rules
+  // -- only O and l/I/| survived, because 'o' and 'l' happen to have their
+  // own lowercase entries. B->b is not in the map, so it never folded back.
+  const auth = AUTH.replace('₱50,000.00', '₱58,000.00');
+  const r = compare(auth.replace('₱58,000.00', '₱5B,000.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
 test('an amount the record does not carry is material, reason added', () => {
   const r = compare(AUTH + '\nAn extra fee of ₱9,999.00 applies.', AUTH);
   const f = materials(r).find((x) => x.reason === 'added');
@@ -172,6 +183,49 @@ test('an amount the record does not carry is material, reason added', () => {
   assert.equal(f.found, '₱9,999.00');
   assert.equal(f.expected, null);
   assert.equal(f.line, null);
+});
+
+test('a duplicated amount on the photo is material, not silently cleared', () => {
+  // The record carries ₱50,000.00 once; the photo carries it twice. The
+  // record->photo pass pairs the first occurrence and is satisfied. Without
+  // consuming from authByKey by count in the photo->record pass too (it used
+  // to only check presence, `.has`, never count), the second occurrence
+  // matches the same key and vanishes -- an inserted duplicate fine line
+  // producing zero findings.
+  const r = compare(
+    AUTH.replace(
+      'A fine of ₱50,000.00 is imposed under Section 12.',
+      'A fine of ₱50,000.00 is imposed under Section 12. A further fine of ₱50,000.00 is imposed under Section 12.'
+    ),
+    AUTH
+  );
+  const f = materials(r).find((x) => x.reason === 'added' && x.cls === 'money');
+  assert.ok(f, 'expected an added-token finding for the duplicate amount');
+  assert.equal(f.found, '₱50,000.00');
+});
+
+test('two independent tampered amounts each pair with their own nearby photo token', () => {
+  // `near` used to take the FIRST unmatched same-class token in document
+  // order, ignoring line distance, and never consumed it -- so both record
+  // tokens could claim the same photo token, and the real match for the
+  // second one was left over to show up as a spurious "added" finding.
+  const record = [
+    'A fine of ₱1,500.00 is imposed under Section 12.',
+    'A further fine of ₱50,000.00 is imposed under Section 13.',
+    'Additional words to clear the minimum word threshold for the OCR logic to actually run here today please.',
+  ].join('\n');
+  const photo = record.replace('₱1,500.00', '₱9,500.00').replace('₱50,000.00', '₱80,000.00');
+  const r = compare(photo, record);
+  const found = materials(r);
+  assert.equal(found.length, 2, `expected exactly 2 findings, got ${JSON.stringify(found)}`);
+  const line1 = found.find((f) => f.line === 1);
+  const line2 = found.find((f) => f.line === 2);
+  assert.ok(line1, 'expected a finding for line 1');
+  assert.equal(line1.expected, '₱1,500.00');
+  assert.equal(line1.found, '₱9,500.00');
+  assert.ok(line2, 'expected a finding for line 2');
+  assert.equal(line2.expected, '₱50,000.00');
+  assert.equal(line2.found, '₱80,000.00');
 });
 
 test('an amount dropped from the photo is material, reason missing', () => {
@@ -186,8 +240,22 @@ test('a name with two character errors is tolerant, not material', () => {
   assert.deepEqual(materials(r), []);
 });
 
+test('digit-for-letter OCR noise inside an ordinary capitalised word does not fabricate a money finding', () => {
+  // C0RP0RATI0N: every O in CORPORATION misread as 0, the common all-caps OCR
+  // failure mode. The old LOOSE_MONEY pattern let "P0" inside that word match
+  // as a currency amount because it never checked what came before the "P" or
+  // after the digits.
+  const r = compare(AUTH.replace('CORPORATION', 'C0RP0RATI0N'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
 test('Rule III read as Rule Ill is not a finding', () => {
-  const auth = 'Issued under Rule III of the implementing rules.';
+  // Padded past THRESHOLDS.minWords (20): the original 8-word fixture fell
+  // below the gate, so compare() returned image_unreadable with an empty
+  // findings array before the citation logic ever ran, and the assertion
+  // passed without exercising it. See task-3-fix-report.md.
+  const auth = 'Issued under Rule III of the implementing rules, per the applicable '
+    + 'regional office guidelines and procedures currently in full effect for this case.';
   const r = compare(auth.replace('Rule III', 'Rule Ill'), auth);
   assert.deepEqual(materials(r), []);
 });

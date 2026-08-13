@@ -146,16 +146,20 @@ export const THRESHOLDS = {
 
 const STRICT = new Set(['money', 'date', 'duration', 'reference', 'citation']);
 
-// Roman numerals in citations come back with the classic I/l/1 confusion, and
-// without this fold every document citing a rule carries a standing false
-// positive. Digits are untouched — a Roman numeral has none.
-const ROMAN_FOLD = (s) => s.replace(/[l1|]/g, 'I').replace(/v/g, 'V');
-
+// Citations no longer need a special-cased Roman-numeral fold: GLYPH_FOLD
+// already maps I, l and | to '1', so folding before lowercasing (below)
+// makes foldGlyphs('Rule III') and foldGlyphs('Rule Ill') identical on the
+// ordinary key path. A dedicated ROMAN_FOLD used to be applied here, but it
+// ran on an already-uppercased string against a pattern that only matched
+// lowercase l/v, so it was a no-op — removed rather than fixed in place.
 function keyFor(cls, value) {
-  const base = value.toLowerCase().replace(/\s+/g, ' ').trim();
-  if (cls === 'citation') return ROMAN_FOLD(base.toUpperCase()).toLowerCase();
-  if (cls === 'name') return foldNameNoise(base);
-  return foldGlyphs(base).replace(/^(?:php|p)\s?/, '₱');
+  const collapsed = String(value).replace(/\s+/g, ' ').trim();
+  if (cls === 'name') return foldNameNoise(collapsed.toLowerCase());
+  // Fold before lowercasing, not after: GLYPH_FOLD's B, D, Q, S, Z, G entries
+  // are uppercase-only (no lowercase counterpart), so folding a
+  // pre-lowercased string leaves six of the map's eight letter rules dead.
+  // Folding the original-case value first keeps every entry live.
+  return foldGlyphs(collapsed).toLowerCase().replace(/^(?:php|p)\s?/, '₱');
 }
 
 // Tolerant classes: fold the confusions that dominate OCR of long words, so a
@@ -192,8 +196,12 @@ function reasonFor(expected, found) {
 // a real digit right after the currency mark is what keeps "P" (a common
 // letter on its own) from ever being mistaken for the start of an amount.
 const DIGITISH = '0-9OoQDlI|SBZG';
+// Guarded on both ends: the currency mark cannot start mid-word (?<![A-Za-z0-9])
+// and the amount cannot run straight into letters (?![A-Za-z]) — otherwise an
+// all-caps digit-read-as-letter word like C0RP0RATI0N hands the "P0" inside it
+// to this pattern as a phantom amount, on a page nobody tampered with.
 const LOOSE_MONEY = new RegExp(
-  String.raw`(?:₱|PHP|P)\s?\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`,
+  String.raw`(?<![A-Za-z0-9])(?:₱|PHP|P)\s?\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?(?![A-Za-z])`,
   'g'
 );
 
@@ -249,6 +257,11 @@ export function compare(ocrText, authText) {
   const findings = [];
   let suppressed = 0;
 
+  // Photo tokens already attributed to a record-side finding as `near`
+  // below, keyed by object identity so the photo -> record pass does not
+  // also report the same token as an unexplained addition.
+  const consumedNear = new Set();
+
   // Record -> photo. Did every value survive?
   for (const t of authTokens) {
     const key = keyFor(t.cls, t.value);
@@ -258,8 +271,25 @@ export function compare(ocrText, authText) {
       continue;
     }
     const strict = STRICT.has(t.cls);
-    // Nearest same-class token on the photo, to report WHAT it reads instead.
-    const near = ocrTokens.find((o) => o.cls === t.cls && !authByKey.has(keyFor(o.cls, o.value)));
+    // Nearest same-class, still-unclaimed token on the photo (by line
+    // distance), to report WHAT it reads instead. Consumed on selection so
+    // two record tokens can never both claim the same photo token — taking
+    // the first unmatched one in document order, un-consumed, let an earlier
+    // record token steal the photo token a later one actually corresponds
+    // to, fabricating both the value and the reason it reported.
+    let near = null;
+    let bestDist = Infinity;
+    for (const o of ocrTokens) {
+      if (o.cls !== t.cls) continue;
+      if (consumedNear.has(o)) continue;
+      if (authByKey.has(keyFor(o.cls, o.value))) continue;
+      const dist = Math.abs(o.line - t.line);
+      if (dist < bestDist) {
+        bestDist = dist;
+        near = o;
+      }
+    }
+    if (near) consumedNear.add(near);
     if (!strict) {
       suppressed++;
       findings.push({
@@ -276,12 +306,20 @@ export function compare(ocrText, authText) {
     });
   }
 
-  // Photo -> record. Did the photo gain a value the record never had?
+  // Photo -> record. Did the photo gain a value the record never had? Consumes
+  // from authByKey the same way the pass above consumes from ocrByKey, so a
+  // photo token repeated more times than the record carries it is reported —
+  // testing presence alone (`.has`) let a duplicated amount hide behind the
+  // single genuine occurrence and produce no finding at all.
   for (const o of ocrTokens) {
     if (!STRICT.has(o.cls)) continue;
+    if (consumedNear.has(o)) continue; // already paired above
     const key = keyFor(o.cls, o.value);
-    if (authByKey.has(key)) continue;
-    if (findings.some((f) => f.found === o.value)) continue; // already paired above
+    const hit = authByKey.get(key);
+    if (hit && hit.length) {
+      hit.shift();
+      continue;
+    }
     findings.push({
       severity: 'material', cls: o.cls, line: null,
       expected: null, found: o.value, reason: 'added',
