@@ -95,6 +95,11 @@
               <button class="btn btn-ghost" id="refBtn" type="button">Show me the page to compare</button>
             </form>
           </details>
+
+          <!-- Attaching a photo is offered only once a page has verified, so the
+               document and page are already known. The input lives here and is
+               driven by a button rendered into the result card. -->
+          <input id="pageImage" type="file" accept="image/*" capture="environment" hidden />
         </section>
 
         <!-- MODE: full document upload -->

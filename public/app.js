@@ -675,7 +675,9 @@ function renderPageResult(data) {
            </p>`
         : `<p class="msg">${esc(s.msg)}</p>`}
       ${data.iisNo && data.k
-        ? '<button class="btn btn-primary" type="button" id="compareBtn">Compare with the real page</button>'
+        ? '<button class="btn btn-primary" type="button" id="compareBtn">Compare with the real page</button>' +
+          '<button class="btn btn-ghost" type="button" id="attachBtn">Attach a photo of this page</button>' +
+          '<div id="ocrOut"></div>'
         : ''}
     </div>`;
   wireInfo(resultEl);
@@ -687,7 +689,79 @@ function renderPageResult(data) {
     showReference(data.iisNo, Number(data.k))
   );
 
+  // Reading the words off a photograph is EVIDENCE, not proof — it can neither
+  // confirm nor withdraw the seal verdict above, so it renders in its own slot
+  // beneath and never restyles the verdict card.
+  const imgEl = document.getElementById('pageImage');
+  document.getElementById('attachBtn')?.addEventListener('click', () => imgEl.click());
+  // Assignment, not addEventListener: the input outlives each render, and a
+  // listener added per render would stack and fire once per page verified.
+  imgEl.onchange = async () => {
+    const file = imgEl.files[0];
+    if (!file) return;
+    const out = document.getElementById('ocrOut');
+    out.innerHTML = '<p class="note" style="margin-top:0.7rem">Reading the photo…</p>';
+    const fd = new FormData();
+    fd.append('doc', data.iisNo);
+    fd.append('k', String(data.k));
+    fd.append('file', file, file.name);
+    try {
+      const res = await fetch('/api/verify-page-image', { method: 'POST', body: fd });
+      renderOcrReport(out, await res.json());
+    } catch {
+      out.innerHTML = '<p class="note" style="margin-top:0.7rem">Couldn’t reach the service.</p>';
+    }
+    imgEl.value = '';
+  };
+
   if (data.iisNo) showPages(data.iisNo, Number(data.k));
+}
+
+// Deliberately plain. No stamp, no --ok green, no "verified" — those belong to
+// the seal. A clean result says nothing was found, which is not the same as
+// saying the page is genuine (spec §2).
+function renderOcrReport(out, rep) {
+  const shell = (ink, head, body) =>
+    `<div class="ocr-note" style="--state:${ink}"><p class="eyebrow">${esc(head)}</p>${body}</div>`;
+
+  if (rep.status === 'no_record_copy')
+    return (out.innerHTML = shell('var(--slate)', 'Nothing to compare against',
+      '<p class="msg">No authoritative copy of this page is on file. The seal result above still stands.</p>'));
+
+  if (rep.status === 'image_unreadable')
+    return (out.innerHTML = shell('var(--slate)', 'Couldn’t read the photo',
+      '<p class="msg">Take it again — flat on the page, in even light, filling the frame. This says nothing about the document.</p>'));
+
+  if (rep.status === 'page_differs')
+    return (out.innerHTML = shell('var(--warn)', 'This doesn’t look like that page',
+      '<p class="msg">The wording is too different to compare value by value. Open the real page and look.</p>'));
+
+  const material = rep.findings.filter((f) => f.severity === 'material');
+  const tolerant = rep.findings.filter((f) => f.severity === 'tolerant');
+
+  const row = (f) => {
+    const where = f.line ? `line ${f.line}` : 'not on the record page';
+    const said = f.expected === null
+      ? `the photo has <b>${esc(f.found)}</b>, the record has no such ${esc(f.cls)}`
+      : `record <b>${esc(f.expected)}</b> · photo <b>${esc(f.found ?? 'nothing')}</b>`;
+    return `<li><span class="pill" style="background:var(--slate)">${esc(f.cls)}</span> ${said} <span style="color:var(--muted)">(${esc(where)})</span></li>`;
+  };
+
+  const head = material.length
+    ? shell('var(--warn)', `${material.length} thing${material.length > 1 ? 's' : ''} worth checking`,
+        `<ul class="more open" style="list-style:none;padding:0;margin-top:0.6rem">${material.map(row).join('')}</ul>
+         <p class="note" style="margin-top:0.6rem">Read these against the real page before drawing a conclusion — a photograph can be misread.</p>`)
+    : shell('var(--slate)', 'Nothing found',
+        '<p class="msg">Every amount, date and duration on the record was found on the photo. This is not a verification — only the seal verifies.</p>');
+
+  const rest = (tolerant.length || rep.suppressed)
+    ? `<details class="ocr-note" style="--state:var(--slate)"><summary>${tolerant.length + rep.suppressed} difference${tolerant.length + rep.suppressed > 1 ? 's' : ''} put down to the camera</summary>
+         <ul style="list-style:none;padding:0;margin-top:0.5rem">${tolerant.map(row).join('')}</ul>
+         <p class="note">Wording differences of this kind are usually how the photo read, not how the page reads.</p>
+       </details>`
+    : '';
+
+  out.innerHTML = head + rest;
 }
 
 // ---- Full document check ----
