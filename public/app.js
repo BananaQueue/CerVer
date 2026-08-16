@@ -676,8 +676,10 @@ function renderPageResult(data) {
         : `<p class="msg">${esc(s.msg)}</p>`}
       ${data.iisNo && data.k
         ? '<button class="btn btn-primary" type="button" id="compareBtn">Compare with the real page</button>' +
-          '<button class="btn btn-ghost" type="button" id="attachBtn">Attach a photo of this page</button>' +
-          '<div id="ocrOut"></div>'
+          (verified
+            ? '<button class="btn btn-ghost" type="button" id="attachBtn">Attach a photo of this page</button>' +
+              '<div id="ocrOut"></div>'
+            : '')
         : ''}
     </div>`;
   wireInfo(resultEl);
@@ -691,28 +693,37 @@ function renderPageResult(data) {
 
   // Reading the words off a photograph is EVIDENCE, not proof — it can neither
   // confirm nor withdraw the seal verdict above, so it renders in its own slot
-  // beneath and never restyles the verdict card.
+  // beneath and never restyles the verdict card. Offered only once the seal
+  // itself has actually verified — not_sealed / invalid_seal / page_count_mismatch
+  // all carry the same iisNo+k shape and must not reach here (see task 7 fix).
   const imgEl = document.getElementById('pageImage');
-  document.getElementById('attachBtn')?.addEventListener('click', () => imgEl.click());
-  // Assignment, not addEventListener: the input outlives each render, and a
-  // listener added per render would stack and fire once per page verified.
-  imgEl.onchange = async () => {
-    const file = imgEl.files[0];
-    if (!file) return;
-    const out = document.getElementById('ocrOut');
-    out.innerHTML = '<p class="note" style="margin-top:0.7rem">Reading the photo…</p>';
-    const fd = new FormData();
-    fd.append('doc', data.iisNo);
-    fd.append('k', String(data.k));
-    fd.append('file', file, file.name);
-    try {
-      const res = await fetch('/api/verify-page-image', { method: 'POST', body: fd });
-      renderOcrReport(out, await res.json());
-    } catch {
-      out.innerHTML = '<p class="note" style="margin-top:0.7rem">Couldn’t reach the service.</p>';
-    }
-    imgEl.value = '';
-  };
+  if (verified) {
+    document.getElementById('attachBtn')?.addEventListener('click', () => imgEl.click());
+    // Assignment, not addEventListener: the input outlives each render, and a
+    // listener added per render would stack and fire once per page verified.
+    // Guarded on `verified` itself (not just the button's presence) so a
+    // handler bound during a page_verified render cannot survive to fire
+    // against a *later*, unverified render's stale `data`.
+    imgEl.onchange = async () => {
+      const file = imgEl.files[0];
+      if (!file) return;
+      const out = document.getElementById('ocrOut');
+      out.innerHTML = '<p class="note" style="margin-top:0.7rem">Reading the photo…</p>';
+      const fd = new FormData();
+      fd.append('doc', data.iisNo);
+      fd.append('k', String(data.k));
+      fd.append('file', file, file.name);
+      try {
+        const res = await fetch('/api/verify-page-image', { method: 'POST', body: fd });
+        renderOcrReport(out, await res.json());
+      } catch {
+        out.innerHTML = '<p class="note" style="margin-top:0.7rem">Couldn’t reach the service.</p>';
+      }
+      imgEl.value = '';
+    };
+  } else {
+    imgEl.onchange = null;
+  }
 
   if (data.iisNo) showPages(data.iisNo, Number(data.k));
 }
