@@ -188,11 +188,22 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
     }
     const imageBytes = await data.toBuffer();
     const { verifyPageImage } = await import('./verifyPageImage.js');
-    return verifyPageImage(db, imageBytes, {
-      iisNo,
-      k,
-      clientHint: req.headers['user-agent'] ?? null,
-    });
+    // verifyPageImage lets an OCR-engine failure propagate rather than folding
+    // it into image_unreadable (see the comment there) -- so this is the only
+    // place that failure is turned into a response. 502: the request itself
+    // was received and handled fine, but a downstream component (the OCR
+    // engine) failed. Without this, Fastify's default error handler would
+    // answer with a bare {statusCode,error,message} 500 that has no `status`
+    // and no `findings`, which the frontend's renderOcrReport cannot parse.
+    try {
+      return await verifyPageImage(db, imageBytes, {
+        iisNo,
+        k,
+        clientHint: req.headers['user-agent'] ?? null,
+      });
+    } catch (err) {
+      return reply.code(502).send({ status: 'ocr_engine_error', error: String(err?.message ?? err) });
+    }
   });
 
   // ---- Authoritative page preview (staff) ----

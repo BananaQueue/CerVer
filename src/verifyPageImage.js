@@ -43,7 +43,22 @@ export async function verifyPageImage(
   }
   if (!authText) return bare('no_record_copy');
 
-  const read = await ocr(imageBytes);
+  // A failure HERE is the engine breaking (worker never started, or crashed
+  // mid-recognition) -- a defect in the service, not evidence about the photo.
+  // It must never fold into image_unreadable (spec §7: that status means OCR
+  // read the image and found too little, not that the engine is broken). So
+  // the error is not caught and turned into a report; it is re-thrown with a
+  // message that unambiguously names it as an engine failure -- preserving
+  // whatever the engine itself said -- and left to propagate. The route
+  // handler (src/app.js) is what actually catches it and answers the client;
+  // there is no handler for it here on purpose.
+  let read;
+  try {
+    read = await ocr(imageBytes);
+  } catch (err) {
+    const engineMsg = err?.message ?? String(err);
+    throw new Error(`OCR engine failure: ${engineMsg}`);
+  }
   if (read.meanConfidence < MIN_CONFIDENCE || read.wordCount < THRESHOLDS.minWords) {
     return bare('image_unreadable');
   }

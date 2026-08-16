@@ -739,6 +739,13 @@ function renderOcrReport(out, rep) {
     return (out.innerHTML = shell('var(--slate)', 'Nothing to compare against',
       '<p class="msg">No authoritative copy of this page is on file. The seal result above still stands.</p>'));
 
+  // The engine failed, not the photo -- same visual family as image_unreadable
+  // (var(--slate), no green, never touches the verdict card above) but worded
+  // so it cannot be misread as a statement about the photo or the document.
+  if (rep.status === 'ocr_engine_error')
+    return (out.innerHTML = shell('var(--slate)', 'Couldn’t run the check right now',
+      '<p class="msg">The photo reader isn’t available. Try again in a moment — this says nothing about the document.</p>'));
+
   if (rep.status === 'image_unreadable')
     return (out.innerHTML = shell('var(--slate)', 'Couldn’t read the photo',
       '<p class="msg">Take it again — flat on the page, in even light, filling the frame. This says nothing about the document.</p>'));
