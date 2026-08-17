@@ -408,6 +408,14 @@ main { flex: 1; padding: 0.9rem 0.9rem calc(var(--bar) + 1.2rem); }
 .report li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid var(--rule); font-size: 0.8rem; }
 .report .pill { font-family: var(--display); font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.1rem 0.35rem; border-radius: 2px; color: #fff; }
 
+.ocr-photo {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
 /* Page-photo comparison. Deliberately quieter than .verdict and .report: no
    stamp, a thin LEFT rule rather than the heavy top rule those use, and no
    card elevation. It reports evidence, not a verdict, and must not be

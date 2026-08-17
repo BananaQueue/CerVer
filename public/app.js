@@ -739,7 +739,7 @@ function renderPageResult(data) {
       fd.append('file', file, file.name);
       try {
         const res = await fetch('/api/verify-page-image', { method: 'POST', body: fd });
-        renderOcrReport(out, await res.json());
+        renderOcrReport(out, await res.json(), file);
       } catch {
         out.innerHTML = '<p class="note" style="margin-top:0.7rem">Couldn’t reach the service.</p>';
       }
@@ -755,7 +755,58 @@ function renderPageResult(data) {
 // Deliberately plain. No stamp, no --ok green, no "verified" — those belong to
 // the seal. A clean result says nothing was found, which is not the same as
 // saying the page is genuine (spec §2).
-function renderOcrReport(out, rep) {
+// Provisional, like every other confidence-derived threshold in this feature
+// (THRESHOLDS in src/pageCompare.js, MIN_CONFIDENCE in src/verifyPageImage.js)
+// -- awaiting Task 8's calibration against real photographs. Below this, a
+// box is drawn solid and heavier; above it, lighter/dashed. Getting this
+// number wrong costs a box styled slightly off, never a wrong finding --
+// styling is downstream of a finding that already exists (spec 2026-08-17 §2).
+const BOX_CONFIDENCE_FLOOR = 0.5;
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Draws the uploaded photo into a canvas inside `out`, with one box per
+// located finding. Severity decides color (material=--warn, tolerant=--slate
+// -- NEVER --ok, same rule as the rest of this feature); region.confidence
+// decides weight/dash only. A finding with no `region` draws nothing here --
+// it's still in the list below, just without a box (spec §5, §10).
+function drawPhotoWithBoxes(out, file, findings) {
+  const located = findings.filter((f) => f.region);
+  if (!file || located.length === 0) return;
+
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'ocr-photo';
+    const maxWidth = out.clientWidth || 600;
+    const scale = Math.min(1, maxWidth / img.naturalWidth);
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const warn = cssVar('--warn');
+    const slate = cssVar('--slate');
+    for (const f of located) {
+      const r = f.region;
+      ctx.strokeStyle = f.severity === 'material' ? warn : slate;
+      const solid = r.confidence < BOX_CONFIDENCE_FLOOR;
+      ctx.lineWidth = solid ? 3 : 1.5;
+      ctx.setLineDash(solid ? [] : [5, 3]);
+      ctx.strokeRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
+    }
+
+    out.prepend(canvas);
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+function renderOcrReport(out, rep, file) {
   const shell = (ink, head, body) =>
     `<div class="ocr-note" style="--state:${ink}"><p class="eyebrow">${esc(head)}</p>${body}</div>`;
 
@@ -804,6 +855,7 @@ function renderOcrReport(out, rep) {
     : '';
 
   out.innerHTML = head + rest;
+  if (rep.findings) drawPhotoWithBoxes(out, file, rep.findings);
 }
 
 // ---- Full document check ----
