@@ -195,7 +195,18 @@ function maskClaimed(line, spans) {
 // the same number key alike.
 const GROUPED = String.raw`[${DIGITISH}]{0,2}(?:[,.][${DIGITISH}]{3})+`;
 const UNGROUPED = String.raw`[${DIGITISH}]*`;
-const CENTAVOS = String.raw`(?:\.[${DIGITISH}]{2})?`;
+// Accepts either separator, same as GROUPED and for the same reason: OCR
+// reads a comma as a period and a period as a comma with about equal
+// frequency. This used to accept only '.', which forgave the period-for-comma
+// misread on the THOUSANDS group (via GROUPED, above) but not the
+// comma-for-period misread here on the CENTAVOS group -- "₱50,000.00" read as
+// "₱50,000,00" truncated the match at the thousands group entirely (the
+// centavos ",00" had nothing left in the pattern that could claim it) and
+// reported `digit-count`, the loudest label the feature has, on an untouched
+// page. keyFor normalizes whichever separator survives here back to '.' (see
+// below) so both spellings key alike, the same way THOUSANDS_SEP does for the
+// grouped separator.
+const CENTAVOS = String.raw`(?:[,.][${DIGITISH}]{2})?`;
 // `first` is the leading character class: real-digit-only for bare P (the
 // CORPORATION anchor), lookalike-tolerant for ₱/PHP (spec §5.4 forgiveness).
 const amount = (first) => `${first}(?:${GROUPED}|${UNGROUPED})${CENTAVOS}`;
@@ -245,6 +256,23 @@ function gluedReadsAsAmount(match) {
   return /^[1-9]\d+$/.test(run);
 }
 
+// A match with no genuine digit anywhere in it is not an amount. The ₱/PHP
+// branch's leading character is digit-lookalike-tolerant (spec §5.4 --
+// forgives "₱S00.00") and the amount pattern allows a zero-length remainder
+// after that one character, so the mark plus a SINGLE lookalike letter, with
+// nothing that is actually 0-9 anywhere in the match, was itself accepted as
+// a complete "amount" -- "PHP Section 12" read as money token "PHP S", eating
+// the leading letter of "Section" before citation extraction ever ran and
+// hiding a tampered citation number completely behind it. The bare-P branch
+// already anchors its first character on a real \d, so a genuine digit always
+// exists there and this is a no-op for it; it only bites the mark branch,
+// which has no anchor of its own to lose. Keep the lookalike-tolerant leading
+// character -- do not remove it, "₱5O,OOO.OO" still needs it -- this only
+// rejects a match that is lookalike letters through and through.
+function hasRealDigit(match) {
+  return /\d/.test(match);
+}
+
 // The one place that decides what counts as a money token, for both record
 // and photo text. `claimed` is the same per-line array extractTokens uses for
 // every other class, so money masks correctly relative to them in both
@@ -267,6 +295,7 @@ function extractMoneyTokens(text, claimed) {
       // through the bare-P glue filter it must never see.
       const isBareP = !/^(?:₱|php)/i.test(m[0]);
       const gluedToNextWord = nextChar !== undefined && nextChar !== NUL && /[A-Za-z]/.test(nextChar);
+      if (!hasRealDigit(m[0])) continue;
       if (isBareP && gluedToNextWord && !gluedReadsAsAmount(m[0])) continue;
       claimed[i].push([m.index, end]);
       out.push({ cls: 'money', value: m[0], line: i + 1 });
@@ -374,7 +403,16 @@ function keyFor(cls, value) {
   // Money only. reasonFor's digit-count comparison is unaffected: digitsOf
   // drops every non-digit anyway, so materiality is decided on real digits
   // (50,000 -> 5 vs 500,000 -> 6) regardless of what the key does.
-  return cls === 'money' ? key.replace(THOUSANDS_SEP, '') : key;
+  if (cls !== 'money') return key;
+  // Strip thousands separators first, THEN normalize whatever separator
+  // survives immediately before a final two-digit group to '.' -- a comma
+  // there can now only be CENTAVOS (THOUSANDS_SEP already consumed every
+  // comma/period that was followed by three digits), so "₱50,000,00" and
+  // "₱500,00" key identically to "₱50,000.00" and "₱500.00". Order matters:
+  // running this before the THOUSANDS_SEP strip would misfire on a genuine
+  // three-digit group that happens to end the string (there is none here,
+  // since THOUSANDS_SEP already claimed those), so it must run second.
+  return key.replace(THOUSANDS_SEP, '').replace(/,(?=\d{2}$)/, '.');
 }
 
 // Tolerant classes: fold the confusions that dominate OCR of long words, so a

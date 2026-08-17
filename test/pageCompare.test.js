@@ -639,3 +639,55 @@ test('suppressed counts the differences attributed to noise', () => {
   const noisy = AUTH.replace('respondent', 'respondenl').replace('receipt', 'receipl');
   assert.ok(compare(noisy, AUTH).suppressed > 0);
 });
+
+// ---- Round 5 findings ----
+//
+// Finding 1 (Critical): the thousands separator was widened to accept both
+// ',' and '.' because OCR confuses them, but CENTAVOS -- the two-digit cents
+// group -- accepted only '.'. A comma-for-decimal misread ("₱50,000,00" for
+// "₱50,000.00") truncated the match at the thousands group and reported the
+// loudest label the feature has (digit-count) on an untampered page. The
+// reverse confusion (period read as comma) was already forgiven for the
+// thousands group; only the centavos direction was not.
+test('a comma read for the decimal point (centavos) in an amount is forgiven, not a finding', () => {
+  const cases = [
+    ['₱50,000.00', '₱50,000,00'],
+    ['P500.00', 'P500,00'],
+    ['P1,250.75', 'P1,250,75'],
+  ];
+  for (const [clean, commaDecimal] of cases) {
+    const auth = `A fine of ${clean} is imposed. ${PAD}`;
+    const r = compare(auth.replace(clean, commaDecimal), auth);
+    assert.deepEqual(materials(r), [], `expected no material findings for ${commaDecimal}`);
+  }
+});
+
+// Finding 2 (Critical): the leading character after the currency mark was
+// loosened to a digit-lookalike class so "₱S00.00" is forgiven, but the
+// amount pattern also allows a zero-length remainder after that one
+// character -- so the mark plus a SINGLE letter, with no real digit
+// anywhere in the match, was itself accepted as a complete "amount". Because
+// money extraction runs first and masks its matched span before citation and
+// date extraction run, this phantom token ate the first letter of the
+// following real word and hid a genuinely tampered citation or date
+// completely -- a false negative on the exact tamper this feature exists to
+// catch.
+test('a phantom PHP-plus-letter token does not swallow a tampered citation behind it', () => {
+  const auth = `Penalty applies under PHP Section 12 of the Rules. ${PAD}`;
+  const tampered = auth.replace('PHP Section 12', 'PHP Section 13');
+  const r = compare(tampered, auth);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, `expected a citation finding, got ${JSON.stringify(materials(r))}`);
+  assert.equal(f.expected, 'Section 12');
+  assert.equal(f.found, 'Section 13');
+});
+
+test('a phantom PHP-plus-letter token does not swallow a tampered date behind it', () => {
+  const auth = `Dated PHP October 3, 2026 as filed with the office. ${PAD}`;
+  const tampered = auth.replace('PHP October 3, 2026', 'PHP October 9, 2026');
+  const r = compare(tampered, auth);
+  const f = materials(r).find((x) => x.cls === 'date');
+  assert.ok(f, `expected a date finding, got ${JSON.stringify(materials(r))}`);
+  assert.equal(f.expected, 'October 3, 2026');
+  assert.equal(f.found, 'October 9, 2026');
+});
