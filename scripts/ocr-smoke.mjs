@@ -19,6 +19,11 @@ const got = await recognize(await fs.readFile(file));
 await shutdownOcr();
 
 console.log(`confidence ${got.meanConfidence.toFixed(3)}, ${got.wordCount} words`);
+console.log(`words with position: ${got.words.length}`);
+if (got.words.length > 0) {
+  const w = got.words[0];
+  console.log(`first word: ${JSON.stringify(w.text)} conf=${w.confidence.toFixed(3)} bbox=${JSON.stringify(w.bbox)}`);
+}
 console.log('---');
 console.log(got.text.slice(0, 400));
 console.log('---');

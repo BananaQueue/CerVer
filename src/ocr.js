@@ -110,9 +110,29 @@ function worker() {
   return workerPromise;
 }
 
+// data.words is not flat -- tesseract.js nests recognition results as
+// Page.blocks[].paragraphs[].lines[].words[], and `blocks` is only populated
+// when explicitly requested via recognize()'s third argument (see below).
+// Flattened here once so the rest of the app never has to know this shape.
+function flattenWords(data) {
+  const out = [];
+  for (const block of data?.blocks ?? []) {
+    for (const para of block?.paragraphs ?? []) {
+      for (const line of para?.lines ?? []) {
+        for (const word of line?.words ?? []) out.push(word);
+      }
+    }
+  }
+  return out;
+}
+
 export async function recognize(imageBytes) {
   const w = await worker();
-  const { data } = await w.recognize(Buffer.from(imageBytes));
+  // { blocks: true } requests the block/paragraph/line/word tree -- without
+  // it data.blocks is null and there is no per-word confidence or bbox at
+  // all, only the flattened text and page-wide mean this function already
+  // returned before locateFindings() needed anything more granular.
+  const { data } = await w.recognize(Buffer.from(imageBytes), {}, { blocks: true });
   const text = String(data?.text ?? '');
   return {
     text,
@@ -123,6 +143,24 @@ export async function recognize(imageBytes) {
       ? Math.min(1, Math.max(0, data.confidence / 100))
       : 0,
     wordCount: text.split(/\s+/).filter(Boolean).length,
+    // Per-word confidence and position, for locateFindings() (src/ocrRegions.js)
+    // to draw a box at a finding's actual location on the photo. Tesseract
+    // already computes this as part of the same recognize() call above --
+    // this was simply discarded until now. bbox is passed through unchanged;
+    // it's already in the original photo's pixel space, which is what the
+    // frontend needs (spec 2026-08-17 §7).
+    words: flattenWords(data).map((word) => ({
+      text: String(word?.text ?? ''),
+      confidence: Number.isFinite(word?.confidence)
+        ? Math.min(1, Math.max(0, word.confidence / 100))
+        : 0,
+      bbox: {
+        x0: word?.bbox?.x0 ?? 0,
+        y0: word?.bbox?.y0 ?? 0,
+        x1: word?.bbox?.x1 ?? 0,
+        y1: word?.bbox?.y1 ?? 0,
+      },
+    })),
   };
 }
 
