@@ -767,13 +767,23 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function drawBox(ctx, f, scale, { emphasize = false } = {}) {
+  const r = f.region;
+  const warn = cssVar('--warn');
+  const slate = cssVar('--slate');
+  ctx.strokeStyle = f.severity === 'material' ? warn : slate;
+  const solid = r.confidence < BOX_CONFIDENCE_FLOOR;
+  ctx.lineWidth = emphasize ? 4 : solid ? 3 : 1.5;
+  ctx.setLineDash(emphasize ? [] : solid ? [] : [5, 3]);
+  ctx.strokeRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
+}
+
 // Draws the uploaded photo into a canvas inside `out`, with one box per
-// located finding. Severity decides color (material=--warn, tolerant=--slate
-// -- NEVER --ok, same rule as the rest of this feature); region.confidence
-// decides weight/dash only. A finding with no `region` draws nothing here --
-// it's still in the list below, just without a box (spec §5, §10).
-function drawPhotoWithBoxes(out, file, findings) {
-  const located = findings.filter((f) => f.region);
+// located finding, and wires each list row (tagged with data-region-index in
+// renderOcrReport's `row`) to re-draw with its own box emphasized on click or
+// Enter/Space. A finding with no `region` draws nothing here -- it's still in
+// the list below, just without a box (spec §5, §10).
+function drawPhotoWithBoxes(out, file, located) {
   if (!file || located.length === 0) return;
 
   const img = new Image();
@@ -785,23 +795,28 @@ function drawPhotoWithBoxes(out, file, findings) {
     const scale = Math.min(1, maxWidth / img.naturalWidth);
     canvas.width = Math.round(img.naturalWidth * scale);
     canvas.height = Math.round(img.naturalHeight * scale);
-
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    const warn = cssVar('--warn');
-    const slate = cssVar('--slate');
-    for (const f of located) {
-      const r = f.region;
-      ctx.strokeStyle = f.severity === 'material' ? warn : slate;
-      const solid = r.confidence < BOX_CONFIDENCE_FLOOR;
-      ctx.lineWidth = solid ? 3 : 1.5;
-      ctx.setLineDash(solid ? [] : [5, 3]);
-      ctx.strokeRect(r.x0 * scale, r.y0 * scale, (r.x1 - r.x0) * scale, (r.y1 - r.y0) * scale);
-    }
-
+    const redraw = (emphasizeIndex) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      located.forEach((f, i) => drawBox(ctx, f, scale, { emphasize: i === emphasizeIndex }));
+    };
+    redraw(-1);
     out.prepend(canvas);
     URL.revokeObjectURL(url);
+
+    const activate = (idx) => {
+      redraw(idx);
+      canvas.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    out.querySelectorAll('[data-region-index]').forEach((li) => {
+      const idx = Number(li.getAttribute('data-region-index'));
+      li.addEventListener('click', () => activate(idx));
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(idx); }
+      });
+    });
   };
   img.src = url;
 }
@@ -831,13 +846,16 @@ function renderOcrReport(out, rep, file) {
 
   const material = rep.findings.filter((f) => f.severity === 'material');
   const tolerant = rep.findings.filter((f) => f.severity === 'tolerant');
+  const located = rep.findings.filter((f) => f.region);
 
   const row = (f) => {
     const where = f.line ? `line ${f.line}` : 'not on the record page';
     const said = f.expected === null
       ? `the photo has <b>${esc(f.found)}</b>, the record has no such ${esc(f.cls)}`
       : `record <b>${esc(f.expected)}</b> · photo <b>${esc(f.found ?? 'nothing')}</b>`;
-    return `<li><span class="pill" style="background:var(--slate)">${esc(f.cls)}</span> ${said} <span style="color:var(--muted)">(${esc(where)})</span></li>`;
+    const idx = located.indexOf(f);
+    const attr = idx !== -1 ? ` data-region-index="${idx}" tabindex="0" style="cursor:pointer"` : '';
+    return `<li${attr}><span class="pill" style="background:var(--slate)">${esc(f.cls)}</span> ${said} <span style="color:var(--muted)">(${esc(where)})</span></li>`;
   };
 
   const head = material.length
@@ -855,7 +873,7 @@ function renderOcrReport(out, rep, file) {
     : '';
 
   out.innerHTML = head + rest;
-  if (rep.findings) drawPhotoWithBoxes(out, file, rep.findings);
+  if (located.length) drawPhotoWithBoxes(out, file, located);
 }
 
 // ---- Full document check ----
