@@ -340,6 +340,12 @@ main { flex: 1; padding: 0.9rem 0.9rem calc(var(--bar) + 1.2rem); }
 .matchrow code { font-family: var(--mono); font-size: 0.66rem; line-height: 1.35; overflow-wrap: anywhere; }
 .matchrow code b { color: var(--pine); }
 
+/* Photo-comparison report. A sibling of .verdict, not a child of it (spec §2
+   — the report must never sit inside the stamped/green verdict card and
+   borrow its authority), so it needs its own top spacing the way .rec below
+   does for the same reason. */
+#ocrOut:not(:empty) { margin-top: 1rem; }
+
 /* ---- pages on record ---- */
 .rec { margin-top: 1.3rem; }
 .rec h2 { font-family: var(--display); font-size: 0.64rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--pine); }

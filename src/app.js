@@ -37,9 +37,18 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
   // this deployment. The endpoint has always been gated by the environment, but
   // the button was not, so a counter clerk was offered a developer tool that
   // 404s. The page cannot read the server's environment, so it asks here.
+  //
+  // `pageImageOcr` gates a real feature the same way, for a different reason:
+  // spec §9.2 makes shipping it conditional on Task 8's calibration against
+  // real photographs, which has not been run (THRESHOLDS and MIN_CONFIDENCE
+  // are still PROVISIONAL guesses), and spec §10 says it is not announced to
+  // staff until it is measured. A real end-to-end run already produced a
+  // material false positive on a genuine page (see progress.md, Task 7). Off
+  // by default; set CERVER_PAGE_IMAGE_OCR=1 once calibration lands.
   app.get('/health', async () => ({
     ok: true,
     frameCapture: process.env.CERVER_FRAME_CAPTURE === '1',
+    pageImageOcr: process.env.CERVER_PAGE_IMAGE_OCR === '1',
   }));
 
   // ---- Transaction verification (existing) ----

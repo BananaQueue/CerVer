@@ -11,6 +11,13 @@ import { recognize as defaultRecognize } from './ocr.js';
 
 // Below this, the reading is too poor to say anything about the page. Reported
 // as a request for a better photo — never as a finding.
+//
+// PROVISIONAL — not yet calibrated against real photographs, same as
+// THRESHOLDS in src/pageCompare.js. Spec §9.2 requires this be measured on
+// photographs of real printed pages before the feature is announced to
+// staff: above every `poor`-labelled capture's confidence, below every
+// `genuine` one. See docs/superpowers/plans/2026-08-13-page-image-ocr.md
+// Task 8.
 const MIN_CONFIDENCE = 0.5;
 
 export async function verifyPageImage(

@@ -135,6 +135,23 @@ test('a clean reading finds nothing material', () => {
   assert.deepEqual(materials(r), []);
 });
 
+test('a page compared against a perfect reading of itself finds nothing material, even with an ALL-CAPS numbered step next to it', () => {
+  // TOKEN_PATTERNS' record-side money pattern used to have no leading
+  // boundary guard, so a bare "P" immediately followed by 1-3 digits read as
+  // the start of an amount no matter what preceded it -- "STEP 3", "GROUP 5",
+  // "CAMP 7", "TOP 10" all matched as money on the record side alone. The
+  // OCR-side LOOSE_MONEY already guarded its bare-P alternative the same way
+  // TOKEN_PATTERNS now does, so the two sides disagreed about what counts as
+  // an amount and a page produced a material finding against its own
+  // untampered self.
+  const auth = 'Follow STEP 3 of the procedure. GROUP 5 and CAMP 7 report to '
+    + 'TOP 10 for further instructions from the regional office as scheduled '
+    + 'for this week, per the applicable guidelines currently in effect.';
+  const r = compare(auth, auth);
+  assert.equal(r.status, 'compared');
+  assert.deepEqual(materials(r), []);
+});
+
 test('realistic OCR noise in words alone finds nothing material', () => {
   const noisy = AUTH.replace('respondent', 'respondenl').replace('receipt', 'receipl');
   const r = compare(noisy, AUTH);
@@ -260,14 +277,56 @@ test('a lost space before the currency mark does not truncate the amount into a 
   assert.deepEqual(materials(r), []);
 });
 
-test('a lost space after the amount does not truncate it into a phantom finding', () => {
+test('a lost space after a ₱ amount does not truncate it into a phantom finding', () => {
   // OCR runs "₱50,000.00" straight into "is" with no space between them.
-  // The old pattern's trailing (?![A-Za-z]) lookahead does not reject this
-  // match -- it backtracks the engine to the longest prefix that satisfies
-  // the lookahead, i.e. "₱50,000" (dropping ".00is"), which then reads as a
-  // digit-count mismatch against the record's "₱50,000.00": a phantom
-  // material finding on a page nobody tampered with.
+  // ₱ can never occur mid-word, so LOOSE_MONEY's ₱/PHP alternative carries no
+  // trailing guard at all and reads the full amount regardless of what
+  // follows it. NOTE: this case, on its own, exercises only that alternative
+  // -- it was previously the sole regression test for "a lost space after the
+  // amount", and it passes identically whether the bare-P alternative's own
+  // trailing-letter handling exists, is broken, or is absent, because a ₱
+  // fixture never reaches that branch. See the next test for bare P, which
+  // is the one this money-guard regression actually lives on.
   const r = compare(AUTH.replace('₱50,000.00 is', '₱50,000.00is'), AUTH);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a lost space after a bare-P amount does not truncate it into a phantom finding', () => {
+  // Same defect as the ₱ case above, but on bare P -- which, unlike ₱,
+  // is an ordinary letter and needs its own trailing handling. A hard "no
+  // letter may follow" guard used to sit here (first a plain lookahead, then
+  // an atomic (?=(x))\1 form after the plain one was found to backtrack into
+  // a truncated, wrong reading). Both forms rejected the WHOLE match whenever
+  // a letter followed with no space -- exactly what a lost space looks like
+  // -- so "P50,000.00is" read as `missing` (atomic form) or a truncated
+  // `digit-count` (plain form) instead of the full, undamaged amount: a
+  // phantom material finding on a page nobody tampered with, either way.
+  const auth = AUTH.replace('₱50,000.00', 'P50,000.00');
+  const r = compare(auth.replace('P50,000.00 is', 'P50,000.00is'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a bare-P amount glued to the next word by a lost space is not confused with digit-lookalike noise inside an ordinary word (PROPONENT)', () => {
+  // The trailing-letter case above must not be fixed by simply dropping the
+  // guard outright -- that would let "P0" inside a misread "PROPONENT" read
+  // as a phantom amount again, the exact class of false positive the guard
+  // was originally added for (see the CORPORATION test below). The fix
+  // distinguishes the two by structure (comma or decimal present), not by
+  // "what comes after", so this must still read as nothing.
+  const auth = AUTH.replace(
+    'The respondent shall comply within 15 days of receipt.',
+    'The respondent, on motion of the PROPONENT, shall comply within 15 days of receipt.'
+  );
+  const r = compare(auth.replace('PROPONENT', 'PR0P0NENT'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a bare-P amount glued to the next word by a lost space is not confused with digit-lookalike noise inside ordinary words (POLLUTION ADJUDICATION BOARD)', () => {
+  const auth = AUTH.replace(
+    'The respondent shall comply within 15 days of receipt.',
+    'The respondent shall comply within 15 days of receipt, per the Pollution Adjudication Board.'
+  );
+  const r = compare(auth.replace('Pollution Adjudication Board', 'P0LLUTI0N ADJUDICATI0N B0ARD'), auth);
   assert.deepEqual(materials(r), []);
 });
 

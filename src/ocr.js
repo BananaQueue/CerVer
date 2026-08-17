@@ -69,14 +69,41 @@ function createWorkerWithTimeout() {
   });
 }
 
+// A failed createWorker() still leaves a worker_threads.Worker running: the
+// underlying tesseract.js call (node_modules/tesseract.js/src/createWorker.js)
+// spawns that thread immediately, before any of the load-stage checks that
+// can fail, and a failure there rejects OUR promise without ever handing back
+// a worker object to call .terminate() on -- so the thread is simply
+// abandoned. Clearing workerPromise on failure (below, unchanged) is correct
+// so the NEXT call gets a fresh attempt instead of replaying a dead rejection
+// forever -- but if the engine is persistently broken (corrupted vendored
+// data, disk pressure, a slow machine tripping WORKER_START_TIMEOUT_MS),
+// every retry leaks one more thread, and every POST to the unauthenticated
+// /api/verify-page-image route triggers a retry.
+//
+// This cooldown bounds that to roughly one abandoned worker per window: once
+// createWorker fails, the same rejection is replayed for FAILURE_COOLDOWN_MS
+// instead of attempting a new one. 60s is long enough to actually matter
+// under sustained load (a burst of requests during an outage collapses to
+// ~1 attempt/minute instead of 1/request) but short enough that a transient
+// failure -- one bad request, a disk hiccup -- does not lock out legitimate
+// use for long once the underlying problem clears.
+const FAILURE_COOLDOWN_MS = 60_000;
+let lastFailure = null; // { at: number, err: Error } | null
+
 // Starting a worker costs seconds, so one is shared. Created lazily: a server
 // that never receives a page image never pays for it.
 function worker() {
   if (!workerPromise) {
-    // If creation fails, clear workerPromise so the NEXT call gets a fresh
-    // attempt instead of replaying this same rejection forever.
+    if (lastFailure && Date.now() - lastFailure.at < FAILURE_COOLDOWN_MS) {
+      return Promise.reject(lastFailure.err);
+    }
+    // If creation fails, clear workerPromise so the NEXT call (once the
+    // cooldown above has elapsed) gets a fresh attempt instead of replaying
+    // this same rejection forever.
     workerPromise = createWorkerWithTimeout().catch((err) => {
       workerPromise = null;
+      lastFailure = { at: Date.now(), err };
       throw err;
     });
   }

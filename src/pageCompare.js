@@ -110,7 +110,15 @@ const CITATION_ANCHOR = '0-9|';
 // reject "Rule |||" even though nothing follows it.
 const CITATION_NUMERAL = String.raw`[IVXLC]+|(?=[${DIGITISH}]*[${CITATION_ANCHOR}])[${DIGITISH}]+`;
 const TOKEN_PATTERNS = [
-  ['money', new RegExp(String.raw`(?:₱|PHP|P)\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`, 'g')],
+  // Leading (?<![A-Za-z0-9]) guard: without it, bare "P" reads as the start of
+  // an amount wherever it is immediately followed by 1-3 digits, which is any
+  // ALL-CAPS section header with a numbered step next to it -- "STEP 3",
+  // "GROUP 5", "CAMP 7", "TOP 10" all read "P 3" / "P 5" etc. as money, so a
+  // page compared against a perfect reading of itself produced a material
+  // finding. LOOSE_MONEY (below, OCR side only) already carries this same
+  // guard on its bare-P alternative; ₱ and PHP never occur mid-word, so the
+  // guard is a no-op for them and only changes behaviour for bare P.
+  ['money', new RegExp(String.raw`(?<![A-Za-z0-9])(?:₱|PHP|P)\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`, 'g')],
   ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
   ['reference', new RegExp(String.raw`\bR\d-\d{4}-\d{6}\b|\bNo\.\s?\d{2}-\d{3,6}\b`, 'g')],
@@ -233,20 +241,34 @@ function reasonFor(expected, found) {
 //
 // Bare P is an ordinary letter and appears inside real words constantly
 // (C0RP0RATI0N), so it keeps the start guard (?<![A-Za-z0-9]) against
-// matching mid-word. It also still needs a trailing guard against running
-// into more letters -- but a plain trailing lookahead, (?![A-Za-z]), does
-// NOT reject a match on failure; the regex engine just backtracks to a
-// shorter amount that does satisfy it, e.g. "P50,000.00is" would match as
-// "P50,000" instead of being thrown out. That silently produces a phantom
-// digit-count finding on a clean page. Made atomic via (?=(x))\1: the
-// lookahead captures the exact amount once, \1 demands that literal capture
-// immediately after, so there is nothing shorter left to backtrack into --
-// a failure here rejects the whole alternative instead of truncating it.
+// matching mid-word.
+//
+// A trailing guard against running into more letters used to live here too
+// (first as a plain lookahead, then made atomic via (?=(x))\1 so a failure
+// couldn't backtrack into a shorter, wrong reading -- see git history). Both
+// versions rejected the WHOLE match whenever a letter followed with no space,
+// which is exactly what a lost space between the amount and the next word
+// looks like: "P50,000.00is" (should read the full amount) came back
+// indistinguishable from "P0LLUTI0N" (should never read as an amount at
+// all) -- one false positive relabelled as another (missing instead of
+// digit-count), never actually fixed.
+//
+// The two ARE distinguishable, just not by "what comes after" -- by what the
+// digit run itself looks like. A misread ordinary word never produces a
+// thousands-separator comma or a decimal point in the middle of its
+// digit-lookalike run; a real amount routinely does. So the regex itself
+// takes the full greedy AMOUNT unconditionally (same as ₱/PHP -- nothing
+// left here that can backtrack, since there is no trailing assertion to
+// fail), and extractLooseMoney below applies the letters-immediately-follow
+// check as a JS-level structural filter instead: keep the match if nothing
+// but a letter follows AND it has a comma or a decimal (it reads as a real
+// amount that lost its trailing space); discard it otherwise (it reads as
+// digit-lookalike noise inside a word, same as the guard always intended).
 const AMOUNT = String.raw`\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`;
 const LOOSE_MONEY = new RegExp(
   String.raw`(?:₱|PHP)\s?${AMOUNT}`
     + '|'
-    + String.raw`(?<![A-Za-z0-9])P\s?(?=(${AMOUNT}))\1(?![A-Za-z])`,
+    + String.raw`(?<![A-Za-z0-9])P\s?${AMOUNT}`,
   'g'
 );
 
@@ -258,6 +280,12 @@ function extractLooseMoney(text) {
     LOOSE_MONEY.lastIndex = 0;
     let m;
     while ((m = LOOSE_MONEY.exec(line)) !== null) {
+      const end = m.index + m[0].length;
+      const nextChar = line[end];
+      const isBareP = m[0][0] === 'P'; // as opposed to ₱ or PHP, checked above
+      const gluedToNextWord = nextChar !== undefined && /[A-Za-z]/.test(nextChar);
+      const readsAsRealAmount = /[,.]/.test(m[0]); // thousands separator or decimal
+      if (isBareP && gluedToNextWord && !readsAsRealAmount) continue;
       out.push({ cls: 'money', value: m[0], line: i + 1 });
     }
   });

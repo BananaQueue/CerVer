@@ -11,6 +11,22 @@ import { coverSourceRect } from '/coverRect.js';
 
 const resultEl = document.getElementById('result');
 
+// One shared read of what this deployment has switched on. Two features are
+// gated by it below (the diagnostic frame-save's saveBtn, and the photo
+// comparison's attach button + report) -- one fetch, read by both, rather
+// than each rolling its own /health call.
+const health = fetch('/health').then((r) => r.json()).catch(() => ({}));
+
+// The photo-comparison feature is not shipped until Task 8's calibration
+// against real photographs lands (spec §9.2, §10) -- THRESHOLDS and
+// MIN_CONFIDENCE are still provisional guesses, and a real end-to-end run
+// already produced a material false positive on a genuine page. The page
+// cannot read the server's environment, so /health carries the switch; the
+// button, #ocrOut and their listeners simply do not exist in the DOM until
+// this is true, same pattern as CERVER_FRAME_CAPTURE's diagnosticsOn below.
+let pageImageOcrOn = false;
+health.then((h) => { pageImageOcrOn = h?.pageImageOcr === true; });
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
@@ -289,10 +305,7 @@ const pageScanner = (() => {
   // person checking a document. It stays in the build and switches on with
   // CERVER_FRAME_CAPTURE=1; until the server says so, the button never appears.
   let diagnosticsOn = false;
-  fetch('/health')
-    .then((r) => r.json())
-    .then((h) => { diagnosticsOn = h?.frameCapture === true; })
-    .catch(() => { diagnosticsOn = false; });
+  health.then((h) => { diagnosticsOn = h?.frameCapture === true; });
 
   async function ensureDecoders() {
     if (!sealInspect) {
@@ -653,6 +666,12 @@ function renderPageResult(data) {
     : '';
 
   const verified = data.status === 'page_verified';
+  // Not just `verified`: the photo-comparison feature stays off the page
+  // entirely until the server says it has been calibrated (see `health` /
+  // `pageImageOcrOn` above) -- the button must be genuinely absent from the
+  // DOM, not merely disabled or hidden, so it never appears for whoever
+  // happens to load the page before Task 8 lands.
+  const offerPhotoCompare = verified && pageImageOcrOn;
   resultEl.hidden = false;
   resultEl.innerHTML = `
     <div class="verdict" style="--state:${s.ink}">
@@ -676,12 +695,12 @@ function renderPageResult(data) {
         : `<p class="msg">${esc(s.msg)}</p>`}
       ${data.iisNo && data.k
         ? '<button class="btn btn-primary" type="button" id="compareBtn">Compare with the real page</button>' +
-          (verified
-            ? '<button class="btn btn-ghost" type="button" id="attachBtn">Attach a photo of this page</button>' +
-              '<div id="ocrOut"></div>'
+          (offerPhotoCompare
+            ? '<button class="btn btn-ghost" type="button" id="attachBtn">Attach a photo of this page</button>'
             : '')
         : ''}
-    </div>`;
+    </div>
+    ${offerPhotoCompare ? '<div id="ocrOut"></div>' : ''}`;
   wireInfo(resultEl);
   orientation(false, false);
   actionBtn.textContent = 'Check another page';
@@ -692,18 +711,23 @@ function renderPageResult(data) {
   );
 
   // Reading the words off a photograph is EVIDENCE, not proof — it can neither
-  // confirm nor withdraw the seal verdict above, so it renders in its own slot
-  // beneath and never restyles the verdict card. Offered only once the seal
-  // itself has actually verified — not_sealed / invalid_seal / page_count_mismatch
-  // all carry the same iisNo+k shape and must not reach here (see task 7 fix).
+  // confirm nor withdraw the seal verdict above, so #ocrOut renders as a
+  // SIBLING of the verdict card, after its closing </div> -- never a child of
+  // it, and never restyles it. A report nested inside the card, even a plain
+  // "nothing found" one, borrows the stamped/green card's visual authority
+  // (spec §2), which a comparison result must never do. Offered only once the
+  // seal itself has actually verified AND the server has switched the feature
+  // on — not_sealed / invalid_seal / page_count_mismatch all carry the same
+  // iisNo+k shape and must not reach here (see task 7 fix).
   const imgEl = document.getElementById('pageImage');
-  if (verified) {
+  if (offerPhotoCompare) {
     document.getElementById('attachBtn')?.addEventListener('click', () => imgEl.click());
     // Assignment, not addEventListener: the input outlives each render, and a
     // listener added per render would stack and fire once per page verified.
-    // Guarded on `verified` itself (not just the button's presence) so a
-    // handler bound during a page_verified render cannot survive to fire
-    // against a *later*, unverified render's stale `data`.
+    // Guarded on `offerPhotoCompare` itself (not just the button's presence)
+    // so a handler bound during a genuine, feature-on render cannot survive
+    // to fire against a *later* unverified or feature-off render's stale
+    // `data`.
     imgEl.onchange = async () => {
       const file = imgEl.files[0];
       if (!file) return;
