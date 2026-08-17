@@ -330,6 +330,52 @@ test('a bare-P amount glued to the next word by a lost space is not confused wit
   assert.deepEqual(materials(r), []);
 });
 
+// A self-comparison property test: compare(t, t) must never produce a
+// material finding, because every token extracted from a page must match
+// itself. Across several rounds, the record-side money pattern (in
+// TOKEN_PATTERNS) and the photo-side money pattern (extractLooseMoney) were
+// fixed independently and kept drifting back out of sync -- each round
+// fixed one side, verified against a handful of hand-picked cases, and left
+// the other side (or a different corner of the same side) still
+// disagreeing. This test is the backstop: it does not care which side is
+// "right", only that record and photo agree on every token across a broad
+// corpus of realistic constructions, so a future edit that touches money
+// extraction on only one side fails here immediately instead of shipping a
+// fifth round of the same defect class.
+test('a page compared against itself finds nothing material, across a corpus of realistic money constructions', () => {
+  const corpus = [
+    // Already-fixed case, kept covered: ALL-CAPS numbered steps must not
+    // read as bare-P money.
+    'Follow STEP 3 of the procedure. GROUP 5 and CAMP 7 report to '
+      + 'TOP 10 for further instructions from the regional office as scheduled '
+      + 'for this week, per the applicable guidelines currently in effect.',
+    // Peso shorthand: a P-prefixed amount with a unit letter and no comma or
+    // decimal is ordinary Philippine-document usage, not tamper evidence.
+    'The fee is P1M for the year and must be paid in full by the applicant '
+      + 'before the deadline set forth in this order today.',
+    'The fee is P50k for now and remains subject to change pending further '
+      + 'review by the regional office in the coming weeks ahead.',
+    'The penalty is P100B for violators who fail to comply with the '
+      + 'applicable environmental regulations within the prescribed period of time.',
+    // Not money at all -- an ordinary abbreviation that happens to start
+    // with a bare P immediately followed by digits.
+    'A P2P transfer was recorded in the ledger during the audit conducted '
+      + 'by the finance office last month without any incident reported.',
+    // A unit letter glued onto a genuine-looking amount, same shape as OCR
+    // noise but present verbatim in the source text.
+    'Item P12B of the schedule refers to a separate annex that lists '
+      + 'additional requirements for the applicant to fulfill before approval.',
+    // A PHP-prefixed amount with its trailing space already lost -- the
+    // Critical-A repro, self-compared instead of record-vs-photo.
+    'A fine of PHP 500was imposed on the respondent hereof for violating '
+      + 'the terms and conditions set forth in this order today.',
+  ];
+  for (const t of corpus) {
+    const r = compare(t, t);
+    assert.deepEqual(materials(r), [], `expected no material findings for: ${t}`);
+  }
+});
+
 test('Rule III read as Rule Ill is not a finding', () => {
   // Padded past THRESHOLDS.minWords (20): the original 8-word fixture fell
   // below the gate, so compare() returned image_unreadable with an empty

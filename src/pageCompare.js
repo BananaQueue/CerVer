@@ -39,7 +39,7 @@ const PUNCT_FOLD = [
 
 // No non-breaking-space rule: JS regex \s already matches U+00A0, and
 // normalizeWords splits on /\s+/ below, so a fold for it would be
-// unobservable \u2014 and therefore could never be regression-tested, which is
+// unobservable — and therefore could never be regression-tested, which is
 // exactly the property the rules above were just fixed to have.
 
 // Lower-cased whitespace-separated words, footer removed. Case is folded because
@@ -84,7 +84,7 @@ const MONTH = 'January|February|March|April|May|June|July|August|September|Octob
 // GLYPH_FOLD's single-character map. Defined here, ahead of TOKEN_PATTERNS,
 // because the citation numeral below needs it to extract a mixed OCR reading
 // (e.g. "1Z", "l2") as a token at all -- only then does keyFor's foldGlyphs
-// get a chance to forgive it. LOOSE_MONEY further down reuses the same class
+// get a chance to forgive it. LOOSE_MONEY just below reuses the same class
 // for the same reason, on amounts instead of citations.
 const DIGITISH = '0-9OoQDlI|SBZG';
 
@@ -96,9 +96,126 @@ const DIGITISH = '0-9OoQDlI|SBZG';
 // letters -- would each read as a phantom citation.
 const CITATION_ANCHOR = '0-9|';
 
+// NUL, not a space: patterns match runs of whitespace, so a space mask would
+// still be traversable — a name run would span a masked citation and capture
+// the blanks with it. No pattern can cross a NUL.
+const NUL = String.fromCharCode(0);
+
+function maskClaimed(line, spans) {
+  if (spans.length === 0) return line;
+  const chars = line.split('');
+  for (const [s, e] of spans) for (let j = s; j < e; j++) chars[j] = NUL;
+  return chars.join('');
+}
+
+// Money used to be defined TWICE: a strict record-side entry inside
+// TOKEN_PATTERNS (\d only, no structural filter) and a separate,
+// independently-written OCR-side extractLooseMoney (DIGITISH-tolerant, with
+// a filter). Each round of fixing one side left the other still disagreeing
+// -- the record side matched "P1" in "P1M" with nothing to stop it, while the
+// photo side's filter discarded the same construct outright; the record side
+// stopped at \d{1,3} while the photo side's DIGITISH run absorbed a trailing
+// unit letter and folded it into a digit. Both drifts produced material
+// findings on a page compared against a perfect reading of itself. There is
+// now exactly ONE definition, below, used for both sides: extractMoneyTokens,
+// called directly by extractTokens for the record side and by compare() for
+// the photo side. Nothing else decides what counts as a money token.
+//
+// Running the DIGITISH-tolerant pattern and its filter against record text
+// (exact machine-extracted PDF text, no glyph-confusion noise) is safe: on
+// clean text it produces the same matches a strict \d pattern would have,
+// plus it now correctly handles a P-prefixed unit-letter or shorthand
+// construct (P1M, P2P, P12B) appearing verbatim in the source, the same way
+// on both sides.
+//
+// The leading digit is left real (\d, not the lookalike class) on purpose: it
+// is the anchor. Loosen it too and "CORPORATION" — P, then O, a lookalike —
+// becomes a phantom money token in the middle of an ordinary name. Requiring
+// a real digit right after the currency mark is what keeps "P" (a common
+// letter on its own) from ever being mistaken for the start of an amount.
+//
+// The two alternatives below are guarded differently because the currency
+// mark decides the ambiguity, not a rule that can be shared across both.
+//
+// ₱ and PHP cannot occur inside an ordinary word — they need no start or
+// trailing guard, and must keep the FULL amount even when OCR glues them to
+// a neighbouring word with no space, e.g. "of₱50,000.00" or "₱50,000.00is",
+// or "PHP 500was".
+//
+// Bare P is an ordinary letter and appears inside real words constantly
+// (C0RP0RATI0N), so it keeps the start guard (?<![A-Za-z0-9]) against
+// matching mid-word.
+//
+// A trailing guard against running into more letters used to live here too
+// (first as a plain lookahead, then made atomic via (?=(x))\1 so a failure
+// couldn't backtrack into a shorter, wrong reading -- see git history). Both
+// versions rejected the WHOLE match whenever a letter followed with no space,
+// which is exactly what a lost space between the amount and the next word
+// looks like: "P50,000.00is" (should read the full amount) came back
+// indistinguishable from "P0LLUTI0N" (should never read as an amount at
+// all) -- one false positive relabelled as another (missing instead of
+// digit-count), never actually fixed.
+//
+// The two ARE distinguishable, just not by "what comes after" -- by what the
+// digit run itself looks like. A misread ordinary word never produces a
+// thousands-separator comma or a decimal point in the middle of its
+// digit-lookalike run; a real amount routinely does. So the regex itself
+// takes the full greedy AMOUNT unconditionally (same as ₱/PHP -- nothing
+// left here that can backtrack, since there is no trailing assertion to
+// fail), and extractMoneyTokens below applies the letters-immediately-follow
+// check as a JS-level structural filter instead: keep the match if nothing
+// but a letter follows AND it has a comma or a decimal (it reads as a real
+// amount that lost its trailing space); discard it otherwise (it reads as
+// digit-lookalike noise inside a word, same as the guard always intended).
+//
+// isBareP tests the currency MARK, not the first character of the match: a
+// PHP-prefixed match also starts with the letter 'P' ("PHP 500"[0] === 'P'),
+// so a single-character check misclassified every PHP amount as bare-P and
+// subjected it to the bare-P filter above -- a PHP amount that lost a space
+// to OCR ("PHP 500was") was wrongly discarded instead of kept whole, the
+// same false positive this whole filter exists to prevent.
+const AMOUNT = String.raw`\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`;
+const LOOSE_MONEY = new RegExp(
+  String.raw`(?:₱|PHP)\s?${AMOUNT}`
+    + '|'
+    + String.raw`(?<![A-Za-z0-9])P\s?${AMOUNT}`,
+  'g'
+);
+
+// The one place that decides what counts as a money token, for both record
+// and photo text. `claimed` is the same per-line array extractTokens uses for
+// every other class, so money masks correctly relative to them in both
+// directions: money runs first (see extractTokens), so it never eats a span
+// another class already claimed (nothing is claimed yet), and it pushes its
+// own spans into `claimed` so later classes cannot run through a money match.
+function extractMoneyTokens(text, claimed) {
+  const rawLines = String(text ?? '').split('\n');
+  const out = [];
+  rawLines.forEach((raw, i) => {
+    const line = stripFooter(raw);
+    const masked = maskClaimed(line, claimed[i]);
+    LOOSE_MONEY.lastIndex = 0;
+    let m;
+    while ((m = LOOSE_MONEY.exec(masked)) !== null) {
+      const end = m.index + m[0].length;
+      const nextChar = masked[end];
+      const isBareP = !(m[0].startsWith('₱') || m[0].startsWith('PHP'));
+      const gluedToNextWord = nextChar !== undefined && nextChar !== NUL && /[A-Za-z]/.test(nextChar);
+      const readsAsRealAmount = /[,.]/.test(m[0]); // thousands separator or decimal
+      if (isBareP && gluedToNextWord && !readsAsRealAmount) continue;
+      claimed[i].push([m.index, end]);
+      out.push({ cls: 'money', value: m[0], line: i + 1 });
+    }
+  });
+  return out;
+}
+
 // Order matters: the first pattern to claim a span wins, so the more specific
 // classes are listed before the looser ones. `name` is last because a run of
-// capitals would otherwise swallow "Section 12" style citations.
+// capitals would otherwise swallow "Section 12" style citations. Money is not
+// in this list at all -- extractTokens runs extractMoneyTokens first, ahead
+// of this loop, so it still claims first exactly as it did when it was the
+// first entry here.
 //
 // The numeral accepts a pure Roman-numeral run (unchanged) or a DIGITISH run
 // anchored by at least one real digit or pipe, so a mixed OCR reading like
@@ -110,15 +227,6 @@ const CITATION_ANCHOR = '0-9|';
 // reject "Rule |||" even though nothing follows it.
 const CITATION_NUMERAL = String.raw`[IVXLC]+|(?=[${DIGITISH}]*[${CITATION_ANCHOR}])[${DIGITISH}]+`;
 const TOKEN_PATTERNS = [
-  // Leading (?<![A-Za-z0-9]) guard: without it, bare "P" reads as the start of
-  // an amount wherever it is immediately followed by 1-3 digits, which is any
-  // ALL-CAPS section header with a numbered step next to it -- "STEP 3",
-  // "GROUP 5", "CAMP 7", "TOP 10" all read "P 3" / "P 5" etc. as money, so a
-  // page compared against a perfect reading of itself produced a material
-  // finding. LOOSE_MONEY (below, OCR side only) already carries this same
-  // guard on its bare-P alternative; ₱ and PHP never occur mid-word, so the
-  // guard is a no-op for them and only changes behaviour for bare P.
-  ['money', new RegExp(String.raw`(?<![A-Za-z0-9])(?:₱|PHP|P)\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?`, 'g')],
   ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
   ['reference', new RegExp(String.raw`\bR\d-\d{4}-\d{6}\b|\bNo\.\s?\d{2}-\d{3,6}\b`, 'g')],
@@ -127,13 +235,19 @@ const TOKEN_PATTERNS = [
 ];
 
 // Tokens the record carries that must survive in the photo, each tied to the
-// line it sits on so a finding can point somewhere on the sheet.
+// line it sits on so a finding can point somewhere on the sheet. Also the
+// entry point the photo side uses (see compare(), below) -- money, and every
+// other class, is extracted identically for both.
 export function extractTokens(text) {
   // stripFooter canonicalizes whitespace, which would destroy line structure —
   // so split first and strip the footer per line, keeping line numbers intact.
   const rawLines = String(text ?? '').split('\n');
   const out = [];
   const claimed = rawLines.map(() => []);
+
+  // Money first, same position it held inside TOKEN_PATTERNS before it moved
+  // out to get its own structural filter -- see extractMoneyTokens above.
+  out.push(...extractMoneyTokens(text, claimed));
 
   for (const [cls, re] of TOKEN_PATTERNS) {
     rawLines.forEach((raw, i) => {
@@ -155,18 +269,6 @@ export function extractTokens(text) {
     });
   }
   return out.sort((a, b) => a.line - b.line);
-}
-
-// NUL, not a space: patterns match runs of whitespace, so a space mask would
-// still be traversable — a name run would span a masked citation and capture
-// the blanks with it. No pattern can cross a NUL.
-const NUL = String.fromCharCode(0);
-
-function maskClaimed(line, spans) {
-  if (spans.length === 0) return line;
-  const chars = line.split('');
-  for (const [s, e] of spans) for (let j = s; j < e; j++) chars[j] = NUL;
-  return chars.join('');
 }
 
 // PROVISIONAL — not yet calibrated against real photographs. Spec §9.2 requires
@@ -217,81 +319,6 @@ function reasonFor(expected, found) {
   return 'text';
 }
 
-// Same principle as GLYPH_FOLD, applied to money's own pattern instead of a
-// value already in hand. TOKEN_PATTERNS' money group requires \d, so a fully
-// mangled reading like "₱5O,OOO.OO" only matches as far as "₱5" — the group
-// and decimal quantifiers stop at the first letter. Loosened here for the OCR
-// side only, never the record's: that text is machine text with no such noise
-// to recover, and stays on the exact TOKEN_PATTERNS money pattern.
-//
-// The leading digit is left real (\d, not the lookalike class) on purpose: it
-// is the anchor. Loosen it too and "CORPORATION" — P, then O, a lookalike —
-// becomes a phantom money token in the middle of an ordinary name. Requiring
-// a real digit right after the currency mark is what keeps "P" (a common
-// letter on its own) from ever being mistaken for the start of an amount.
-// (DIGITISH itself is defined above, ahead of TOKEN_PATTERNS, shared with
-// the citation numeral.)
-
-// The two alternatives below are guarded differently because the currency
-// mark decides the ambiguity, not a rule that can be shared across both.
-//
-// ₱ and PHP cannot occur inside an ordinary word — they need no start or
-// trailing guard, and must keep the FULL amount even when OCR glues them to
-// a neighbouring word with no space, e.g. "of₱50,000.00" or "₱50,000.00is".
-//
-// Bare P is an ordinary letter and appears inside real words constantly
-// (C0RP0RATI0N), so it keeps the start guard (?<![A-Za-z0-9]) against
-// matching mid-word.
-//
-// A trailing guard against running into more letters used to live here too
-// (first as a plain lookahead, then made atomic via (?=(x))\1 so a failure
-// couldn't backtrack into a shorter, wrong reading -- see git history). Both
-// versions rejected the WHOLE match whenever a letter followed with no space,
-// which is exactly what a lost space between the amount and the next word
-// looks like: "P50,000.00is" (should read the full amount) came back
-// indistinguishable from "P0LLUTI0N" (should never read as an amount at
-// all) -- one false positive relabelled as another (missing instead of
-// digit-count), never actually fixed.
-//
-// The two ARE distinguishable, just not by "what comes after" -- by what the
-// digit run itself looks like. A misread ordinary word never produces a
-// thousands-separator comma or a decimal point in the middle of its
-// digit-lookalike run; a real amount routinely does. So the regex itself
-// takes the full greedy AMOUNT unconditionally (same as ₱/PHP -- nothing
-// left here that can backtrack, since there is no trailing assertion to
-// fail), and extractLooseMoney below applies the letters-immediately-follow
-// check as a JS-level structural filter instead: keep the match if nothing
-// but a letter follows AND it has a comma or a decimal (it reads as a real
-// amount that lost its trailing space); discard it otherwise (it reads as
-// digit-lookalike noise inside a word, same as the guard always intended).
-const AMOUNT = String.raw`\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`;
-const LOOSE_MONEY = new RegExp(
-  String.raw`(?:₱|PHP)\s?${AMOUNT}`
-    + '|'
-    + String.raw`(?<![A-Za-z0-9])P\s?${AMOUNT}`,
-  'g'
-);
-
-function extractLooseMoney(text) {
-  const rawLines = String(text ?? '').split('\n');
-  const out = [];
-  rawLines.forEach((raw, i) => {
-    const line = stripFooter(raw);
-    LOOSE_MONEY.lastIndex = 0;
-    let m;
-    while ((m = LOOSE_MONEY.exec(line)) !== null) {
-      const end = m.index + m[0].length;
-      const nextChar = line[end];
-      const isBareP = m[0][0] === 'P'; // as opposed to ₱ or PHP, checked above
-      const gluedToNextWord = nextChar !== undefined && /[A-Za-z]/.test(nextChar);
-      const readsAsRealAmount = /[,.]/.test(m[0]); // thousands separator or decimal
-      if (isBareP && gluedToNextWord && !readsAsRealAmount) continue;
-      out.push({ cls: 'money', value: m[0], line: i + 1 });
-    }
-  });
-  return out;
-}
-
 function indexByKey(tokens) {
   const m = new Map();
   for (const t of tokens) {
@@ -315,15 +342,13 @@ export function compare(ocrText, authText) {
     return { status: 'page_differs', similarity: sim, findings: [], suppressed: 0 };
   }
 
+  // Both sides now go through the exact same extractTokens -- including for
+  // money, which used to be re-extracted here with a second, independently
+  // written pattern. That second definition is what let the record and photo
+  // sides disagree about what counts as an amount; there is nothing left here
+  // to keep in sync.
   const authTokens = extractTokens(authText);
-  // Money is re-extracted with the loosened pattern above; every other class
-  // comes from extractTokens as given. Both the truncated strict-pattern
-  // match and the full loosened one would otherwise coexist here, and the
-  // truncated leftover ("₱5") would then read as a phantom added value in
-  // the photo->record pass below.
-  const ocrTokens = extractTokens(ocrText)
-    .filter((t) => t.cls !== 'money')
-    .concat(extractLooseMoney(ocrText));
+  const ocrTokens = extractTokens(ocrText);
   const ocrByKey = indexByKey(ocrTokens);
   const authByKey = indexByKey(authTokens);
 
