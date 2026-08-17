@@ -369,11 +369,150 @@ test('a page compared against itself finds nothing material, across a corpus of 
     // Critical-A repro, self-compared instead of record-vs-photo.
     'A fine of PHP 500was imposed on the respondent hereof for violating '
       + 'the terms and conditions set forth in this order today.',
+    // Round-4 additions. Self-comparison cannot see the record/photo
+    // asymmetries these constructions used to cause (there is one definition
+    // now, so both sides drift together) -- they are here as the backstop
+    // against a FUTURE edit that reintroduces a split. The asymmetries
+    // themselves are tested record-vs-photo, below this test.
+    //
+    // An amount written with no thousands separator at all.
+    'A fine of ₱50000.00 is imposed on the respondent hereof for violating '
+      + 'the terms and conditions set forth in this order today.',
+    // The same amount with the separator read as a period rather than a comma.
+    'A fine of ₱50.000.00 is imposed on the respondent hereof for violating '
+      + 'the terms and conditions set forth in this order today.',
+    // A bare-P amount under 1,000 with no decimal, glued to the next word.
+    'The fee is P500due now and must be settled by the applicant before the '
+      + 'deadline set forth in this order today without any further delay.',
+    // Php -- the conventional Philippine mixed-case spelling of the currency.
+    'A fine of Php 50,000.00 is imposed on the respondent hereof for violating '
+      + 'the terms and conditions set forth in this order today.',
+    // An ordinary word beginning with P whose second letter OCR read as a
+    // digit. "P1" here is noise inside a word, not an amount.
+    'The P1PELINE crossing the easement shall be inspected by the regional '
+      + 'office within the period prescribed under the applicable guidelines.',
   ];
   for (const t of corpus) {
     const r = compare(t, t);
     assert.deepEqual(materials(r), [], `expected no material findings for: ${t}`);
   }
+});
+
+// ---- Round 4: the record-vs-photo asymmetries the corpus above cannot see ----
+//
+// Filler so every fixture below clears THRESHOLDS.minWords (20) on its own;
+// short fixtures return image_unreadable with an empty findings array and
+// assert nothing, which has already happened twice in this file.
+const PAD = 'The respondent shall comply with the terms and conditions set forth in '
+  + 'this order issued by the regional office today without any further delay.';
+
+// Design spec 5.4 requires thousands separators be normalised on BOTH sides.
+// They were not: AMOUNT required digits in groups of exactly three separated
+// by commas, so a comma-less run was truncated to its first three digits and
+// the truncation was then reported as `digit-count` -- the most alarming label
+// the feature has -- on a page nobody touched. A dropped or misread comma is
+// one of the commonest photo errors on a printed amount.
+test('a comma dropped by OCR from an amount is not a finding', () => {
+  const auth = 'A fine of ₱50,000.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('₱50,000.00', '₱50000.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test("a thousands comma read as a period is not a finding", () => {
+  const auth = 'A fine of ₱50,000.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('₱50,000.00', '₱50.000.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('a comma dropped from a PHP-marked amount is not a finding', () => {
+  const auth = 'A fine of PHP 1,200.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('PHP 1,200.00', 'PHP 1200.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// The other half of the same defect: truncating at three digits also HID a
+// tampered digit sitting past that point, so an ungrouped amount could be
+// edited invisibly. Widening the pattern must not buy the false positive back
+// at the cost of this.
+test('a tampered digit past the third position of an ungrouped amount is still material', () => {
+  const auth = 'A fine of ₱10000 is imposed. ' + PAD;
+  const r = compare(auth.replace('₱10000', '₱10009'), auth);
+  const f = materials(r).find((x) => x.cls === 'money');
+  assert.ok(f, 'expected a money finding');
+  assert.equal(f.reason, 'digit-substitution');
+  assert.equal(f.expected, '₱10000');
+  assert.equal(f.found, '₱10009');
+});
+
+// The glued-match filter used to ask "does the match contain a comma or a
+// decimal point". A real amount under 1,000 with no centavos has neither, and
+// fees and small fines are routinely written that way -- so a lost space next
+// to one was discarded on whichever side lost the space and reported as a
+// missing (or added) amount. Both directions, because the old filter was
+// asymmetric and a one-directional test would have passed against it.
+test('a bare-P amount under 1,000 with no decimal, glued to the next word, is not a finding', () => {
+  const auth = 'The fee is P500 due now. ' + PAD;
+  const r = compare(auth.replace('P500 due', 'P500due'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('the same glued bare-P amount is not a finding when the RECORD is the glued side', () => {
+  const auth = 'The fee is P250due now. ' + PAD;
+  const r = compare(auth.replace('P250due', 'P250 due'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Php is the conventional Philippine spelling. date, duration and citation all
+// carry the `i` flag; money did not, so a Php-marked amount was not extracted
+// as a token AT ALL, on either side -- a tampered amount on such a page could
+// never be flagged, because there was nothing to compare.
+test('a tampered Php (mixed-case) amount is material', () => {
+  const auth = 'A fine of Php 50,000.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('Php 50,000.00', 'Php 90,000.00'), auth);
+  const f = materials(r).find((x) => x.cls === 'money');
+  assert.ok(f, 'expected a money finding');
+  assert.equal(f.expected, 'Php 50,000.00');
+  assert.equal(f.found, 'Php 90,000.00');
+  assert.equal(f.reason, 'digit-substitution');
+});
+
+test('extractTokens finds a Php-marked amount, whatever the case of the mark', () => {
+  const t = extractTokens('Fines of Php 1,200.00 and php 300.50 and PHP 40.00 apply.');
+  assert.deepEqual(byClass(t, 'money'), ['Php 1,200.00', 'php 300.50', 'PHP 40.00']);
+});
+
+// The leading-real-digit anchor exists to stop bare P + a lookalike letter
+// (CORPORATION) reading as money. ₱ and PHP cannot occur mid-word, so the
+// anchor bought them nothing and cost them spec 5.4's letter-for-digit
+// forgiveness at the FIRST digit position only -- every other position in the
+// same amount was already forgiven.
+test('letter-for-digit noise at the first digit after a peso mark is forgiven', () => {
+  const auth = 'A fine of ₱500.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('₱500.00', '₱S00.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('letter-for-digit noise at the first digit after a PHP mark is forgiven', () => {
+  const auth = 'A fine of PHP 500.00 is imposed. ' + PAD;
+  const r = compare(auth.replace('PHP 500.00', 'PHP S00.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// ...but the bare-P branch must KEEP its anchor: that is the only thing
+// separating a real amount from an ordinary word beginning with P.
+test('a bare P followed by a lookalike letter is still not an amount', () => {
+  const auth = 'Issued to the PORT AUTHORITY of the region. ' + PAD;
+  const r = compare(auth.replace('PORT', 'P0RT'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Widening the glued-match filter must not let noise inside an ordinary word
+// through. "P1PELINE" (PIPELINE with the I misread as a 1) is the shape that
+// a naive "the run is all real digits" test would wrongly admit.
+test('a digit misread inside a word beginning with P does not fabricate an amount', () => {
+  const auth = 'The PIPELINE crossing the easement shall be inspected. ' + PAD;
+  const r = compare(auth.replace('PIPELINE', 'P1PELINE'), auth);
+  assert.deepEqual(materials(r), []);
 });
 
 test('Rule III read as Rule Ill is not a finding', () => {

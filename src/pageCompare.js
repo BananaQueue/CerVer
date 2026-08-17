@@ -128,11 +128,21 @@ function maskClaimed(line, spans) {
 // construct (P1M, P2P, P12B) appearing verbatim in the source, the same way
 // on both sides.
 //
-// The leading digit is left real (\d, not the lookalike class) on purpose: it
-// is the anchor. Loosen it too and "CORPORATION" — P, then O, a lookalike —
-// becomes a phantom money token in the middle of an ordinary name. Requiring
-// a real digit right after the currency mark is what keeps "P" (a common
-// letter on its own) from ever being mistaken for the start of an amount.
+// The BARE-P alternative's leading digit is left real (\d, not the lookalike
+// class) on purpose: it is the anchor. Loosen it and "CORPORATION" — P, then
+// O, a lookalike — becomes a phantom money token in the middle of an ordinary
+// name. Requiring a real digit right after a bare P is what keeps "P" (a
+// common letter on its own) from ever being mistaken for the start of an
+// amount.
+//
+// The ₱/PHP alternative does NOT carry that anchor, and must not: the anchor
+// buys those marks nothing (neither can occur mid-word, so there is no
+// ordinary word to protect) while costing them spec §5.4's letter-for-digit
+// forgiveness at the FIRST digit position alone — "₱S00.00" was not extracted
+// as an amount at all and the record's ₱500.00 reported as `missing`, even
+// though the identical noise at every LATER position ("₱5O,OOO.OO") was
+// already forgiven. The two branches' leading rules are deliberately
+// different; only the mark branch is loose.
 //
 // The two alternatives below are guarded differently because the currency
 // mark decides the ambiguity, not a rule that can be shared across both.
@@ -157,16 +167,13 @@ function maskClaimed(line, spans) {
 // digit-count), never actually fixed.
 //
 // The two ARE distinguishable, just not by "what comes after" -- by what the
-// digit run itself looks like. A misread ordinary word never produces a
-// thousands-separator comma or a decimal point in the middle of its
-// digit-lookalike run; a real amount routinely does. So the regex itself
-// takes the full greedy AMOUNT unconditionally (same as ₱/PHP -- nothing
-// left here that can backtrack, since there is no trailing assertion to
-// fail), and extractMoneyTokens below applies the letters-immediately-follow
-// check as a JS-level structural filter instead: keep the match if nothing
-// but a letter follows AND it has a comma or a decimal (it reads as a real
-// amount that lost its trailing space); discard it otherwise (it reads as
-// digit-lookalike noise inside a word, same as the guard always intended).
+// digit run itself looks like. So the regex itself takes the full greedy
+// amount() unconditionally (same as ₱/PHP -- nothing left here that can
+// backtrack, since there is no trailing assertion to fail), and
+// extractMoneyTokens below applies the letters-immediately-follow check as a
+// JS-level structural filter instead. See gluedReadsAsAmount for what that
+// filter now tests, and why "does the match contain a comma or a decimal"
+// -- its first form -- was not enough.
 //
 // isBareP tests the currency MARK, not the first character of the match: a
 // PHP-prefixed match also starts with the letter 'P' ("PHP 500"[0] === 'P'),
@@ -174,13 +181,69 @@ function maskClaimed(line, spans) {
 // subjected it to the bare-P filter above -- a PHP amount that lost a space
 // to OCR ("PHP 500was") was wrongly discarded instead of kept whole, the
 // same false positive this whole filter exists to prevent.
-const AMOUNT = String.raw`\d[${DIGITISH}]{0,2}(?:,[${DIGITISH}]{3})*(?:\.[${DIGITISH}]{2})?`;
+//
+// The digit run accepts thousands grouping but does NOT require it. Requiring
+// it (the run was `\d[D]{0,2}(?:,[D]{3})*`) meant a comma-less run was cut
+// off after three digits, which produced BOTH halves of the same defect:
+// "₱50000.00", an ordinary dropped-comma misreading, truncated to "₱500" and
+// was reported as `digit-count` -- the loudest label the feature has -- on an
+// untouched page; and "₱10009" against a record's "₱10000" truncated to the
+// same "₱100" on both sides, hiding a real edit completely. The separator is
+// [,.] rather than "," because OCR reads a comma as a period constantly, and
+// spec §5.4 requires separators be unified, not merely tolerated -- keyFor
+// strips them (see THOUSANDS_SEP) so the grouped and ungrouped spellings of
+// the same number key alike.
+const GROUPED = String.raw`[${DIGITISH}]{0,2}(?:[,.][${DIGITISH}]{3})+`;
+const UNGROUPED = String.raw`[${DIGITISH}]*`;
+const CENTAVOS = String.raw`(?:\.[${DIGITISH}]{2})?`;
+// `first` is the leading character class: real-digit-only for bare P (the
+// CORPORATION anchor), lookalike-tolerant for ₱/PHP (spec §5.4 forgiveness).
+const amount = (first) => `${first}(?:${GROUPED}|${UNGROUPED})${CENTAVOS}`;
+// The currency MARK is case-insensitive, so "Php" -- the conventional
+// Philippine spelling -- is recognised at all. Without this a tampered amount
+// on a Php-marked page produced NO token on either side and so could never be
+// flagged, whatever it was changed to.
+//
+// Spelled out per character rather than with the `i` flag date, duration and
+// citation carry. The flag would also apply to DIGITISH, which enumerates its
+// cases deliberately ('O' and 'o', 'l' and 'I') -- under `i` it silently gains
+// lowercase d, s, b, z, g, q and uppercase L, none of which GLYPH_FOLD can
+// fold back. Measured, not assumed: with the flag on, "₱50,000.00is" absorbed
+// the trailing "is" into the amount and keyed as ₱50000001, and "P500due"
+// absorbed the "d" and was then thrown out by the glue filter -- two of the
+// false positives this file has already been fixed for, reintroduced by the
+// flag. The leading guard (?<![A-Za-z0-9]) is case-blind either way.
 const LOOSE_MONEY = new RegExp(
-  String.raw`(?:₱|PHP)\s?${AMOUNT}`
+  String.raw`(?:₱|[Pp][Hh][Pp])\s?${amount(`[${DIGITISH}]`)}`
     + '|'
-    + String.raw`(?<![A-Za-z0-9])P\s?${AMOUNT}`,
+    + String.raw`(?<![A-Za-z0-9])[Pp]\s?${amount('\\d')}`,
   'g'
 );
+
+// Does a bare-P match that runs straight into a letter read as a real amount
+// that lost its trailing space, or as digit-lookalike noise inside a misread
+// word? Three signals, each closing a case the others do not:
+//
+//   - a comma/period separator or a decimal point in the run. A misread word
+//     never produces one; a real amount routinely does. This alone was the
+//     whole filter, and it discarded every amount under 1,000 written without
+//     centavos -- "P500due" -- which is how fees and small fines are actually
+//     written. Both directions were wrong: the glued side lost the token, so
+//     the same page read `missing` one way and `added` the other.
+//   - every character of the run is a REAL digit. A lookalike LETTER in the
+//     run means the run came out of a word ("P0LL" from P0LLUTI0N, "PD" from
+//     PDF), not off a printed amount.
+//   - the run is two or more digits and does not start with 0. Printed
+//     amounts carry no leading zero, and a single digit glued to a word is
+//     far likelier to be noise than money. Without these two, "P0LLUTI0N"
+//     (run "0") and "P1PELINE" (PIPELINE with the I misread, run "1") each
+//     read as a phantom amount again -- the exact false-positive class this
+//     filter exists for, reopened by the digits-only test on its own.
+function gluedReadsAsAmount(match) {
+  if (/[,.]/.test(match)) return true;
+  const run = match.replace(/^[Pp]\s?/, '');
+  return /^[1-9]\d+$/.test(run);
+}
 
 // The one place that decides what counts as a money token, for both record
 // and photo text. `claimed` is the same per-line array extractTokens uses for
@@ -199,10 +262,12 @@ function extractMoneyTokens(text, claimed) {
     while ((m = LOOSE_MONEY.exec(masked)) !== null) {
       const end = m.index + m[0].length;
       const nextChar = masked[end];
-      const isBareP = !(m[0].startsWith('₱') || m[0].startsWith('PHP'));
+      // Case-insensitive, because the pattern now is: "Php 500"[0] === 'P'
+      // reads as bare P under a case-sensitive check, and would then be put
+      // through the bare-P glue filter it must never see.
+      const isBareP = !/^(?:₱|php)/i.test(m[0]);
       const gluedToNextWord = nextChar !== undefined && nextChar !== NUL && /[A-Za-z]/.test(nextChar);
-      const readsAsRealAmount = /[,.]/.test(m[0]); // thousands separator or decimal
-      if (isBareP && gluedToNextWord && !readsAsRealAmount) continue;
+      if (isBareP && gluedToNextWord && !gluedReadsAsAmount(m[0])) continue;
       claimed[i].push([m.index, end]);
       out.push({ cls: 'money', value: m[0], line: i + 1 });
     }
@@ -288,6 +353,16 @@ const STRICT = new Set(['money', 'date', 'duration', 'reference', 'citation']);
 // ordinary key path. A dedicated ROMAN_FOLD used to be applied here, but it
 // ran on an already-uppercased string against a pattern that only matched
 // lowercase l/v, so it was a no-op — removed rather than fixed in place.
+// A separator followed by exactly three digits is a thousands separator; a
+// period followed by two is centavos. That is how the amounts on these pages
+// are actually printed, and it is decidable from the string alone -- so
+// "50,000.00", "50000.00" and "50.000.00" all key as "50000.00" (spec §5.4:
+// unify separators, both sides) while "50,000.00" and "500,000.00" still
+// differ, in length, whether or not either carries a comma. The centavos
+// point is deliberately NOT stripped: strip it too and "₱50,000.00" would key
+// identically to "₱5,000,000", hiding a hundredfold edit.
+const THOUSANDS_SEP = /[,.](?=\d{3}(?:\D|$))/g;
+
 function keyFor(cls, value) {
   const collapsed = String(value).replace(/\s+/g, ' ').trim();
   if (cls === 'name') return foldNameNoise(collapsed.toLowerCase());
@@ -295,7 +370,11 @@ function keyFor(cls, value) {
   // are uppercase-only (no lowercase counterpart), so folding a
   // pre-lowercased string leaves six of the map's eight letter rules dead.
   // Folding the original-case value first keeps every entry live.
-  return foldGlyphs(collapsed).toLowerCase().replace(/^(?:php|p)\s?/, '₱');
+  const key = foldGlyphs(collapsed).toLowerCase().replace(/^(?:php|p)\s?/, '₱');
+  // Money only. reasonFor's digit-count comparison is unaffected: digitsOf
+  // drops every non-digit anyway, so materiality is decided on real digits
+  // (50,000 -> 5 vs 500,000 -> 6) regardless of what the key does.
+  return cls === 'money' ? key.replace(THOUSANDS_SEP, '') : key;
 }
 
 // Tolerant classes: fold the confusions that dominate OCR of long words, so a
