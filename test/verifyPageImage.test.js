@@ -28,10 +28,11 @@ const BODY = [
 
 // The image is never opened in these tests — a stub stands in for the engine, so
 // the suite stays deterministic and offline. Task 8 exercises the real one.
-const stubOcr = (text, meanConfidence = 0.9) => async () => ({
+const stubOcr = (text, meanConfidence = 0.9, words = []) => async () => ({
   text,
   meanConfidence,
   wordCount: text.split(/\s+/).filter(Boolean).length,
+  words,
 });
 
 async function seed({ withCopy = true } = {}) {
@@ -65,6 +66,33 @@ test('an inflated amount is reported as material', async () => {
     iisNo: 'R1-2026-000001', k: 1, ocr: stubOcr(BODY.replace('P50,000.00', 'P500,000.00')),
   });
   assert.ok(r.findings.some((f) => f.severity === 'material' && f.cls === 'money'));
+});
+
+test('a located finding carries a region; an unlocatable one does not', async () => {
+  const { db } = await seed();
+  // Real bbox/confidence values aren't needed here -- only that they flow
+  // through untouched from recognize()'s shape to the final report.
+  const words = 'P500,000.00 is imposed under Section 12 of the rules, and the'
+    .split(' ')
+    .map((text, i) => ({ text, confidence: 0.8, bbox: { x0: i * 10, y0: 0, x1: i * 10 + 8, y1: 8 } }));
+  const tampered = BODY.replace('P50,000.00', 'P500,000.00');
+  const r = await verifyPageImage(db, Buffer.alloc(1), {
+    iisNo: 'R1-2026-000001', k: 1, ocr: stubOcr(tampered, 0.9, words),
+  });
+  const moneyFinding = r.findings.find((f) => f.severity === 'material' && f.cls === 'money');
+  assert.ok(moneyFinding, 'expected a material money finding');
+  assert.ok(moneyFinding.region, 'expected the money finding to carry a region');
+  assert.equal(moneyFinding.region.x0, 0); // "P500,000.00" is the first word in the stub list above
+});
+
+test('no region on any finding when the OCR stub supplies no words', async () => {
+  const { db } = await seed();
+  const r = await verifyPageImage(db, Buffer.alloc(1), {
+    iisNo: 'R1-2026-000001', k: 1, ocr: stubOcr(BODY.replace('P50,000.00', 'P500,000.00')),
+  });
+  const moneyFinding = r.findings.find((f) => f.severity === 'material' && f.cls === 'money');
+  assert.ok(moneyFinding, 'expected a material money finding');
+  assert.equal(moneyFinding.region, undefined);
 });
 
 test('no authoritative copy on file -> no_record_copy, not a finding', async () => {

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { extractPageTexts } from './pdfTools.js';
 import { compare, THRESHOLDS } from './pageCompare.js';
 import { recognize as defaultRecognize } from './ocr.js';
+import { locateFindings } from './ocrRegions.js';
 
 // Compare a photograph of a printed page against the page as it was sealed.
 //
@@ -70,5 +71,7 @@ export async function verifyPageImage(
     return bare('image_unreadable');
   }
 
-  return done(compare(read.text, authText));
+  const report = compare(read.text, authText);
+  const findings = locateFindings(report.findings, read.words);
+  return done({ ...report, findings });
 }
