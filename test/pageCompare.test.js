@@ -691,3 +691,17 @@ test('a phantom PHP-plus-letter token does not swallow a tampered date behind it
   assert.equal(f.expected, 'October 3, 2026');
   assert.equal(f.found, 'October 9, 2026');
 });
+
+// Finding (Round 6): hasRealDigit rejected the phantom "PHP S" token above by
+// requiring a genuine 0-9 somewhere in the match, but an amount whose digits
+// are ALL glyph lookalikes -- "1" read as "l", every "0" read as "O" -- has no
+// real digit either, and was over-rejected right along with the phantom. That
+// amount vanished from extraction entirely instead of being forgiven, so an
+// untampered page reported a material "missing" money finding: a false
+// positive on the exact ship criterion this feature is gated on.
+test('an amount with every digit misread as a lookalike letter is forgiven, not a finding', () => {
+  const auth = `A fine of ₱1,000.00 is imposed. ${PAD}`;
+  const allLookalike = auth.replace('₱1,000.00', '₱l,OOO.OO');
+  const r = compare(allLookalike, auth);
+  assert.deepEqual(materials(r), [], `expected no material findings, got ${JSON.stringify(materials(r))}`);
+});

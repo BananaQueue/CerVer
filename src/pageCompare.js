@@ -269,8 +269,22 @@ function gluedReadsAsAmount(match) {
 // which has no anchor of its own to lose. Keep the lookalike-tolerant leading
 // character -- do not remove it, "₱5O,OOO.OO" still needs it -- this only
 // rejects a match that is lookalike letters through and through.
+//
+// But requiring a real 0-9 over-corrected: an amount whose digits are ALL
+// glyph lookalikes -- "1"->"l", every "0"->"O", e.g. "₱l,OOO.OO" for
+// "₱1,000.00" -- has no real digit either, and vanished from extraction
+// entirely instead of being forgiven, reporting a material "missing" finding
+// on an untampered page. What actually distinguishes a genuine (if badly
+// misread) amount from the phantom is not "does it contain a real digit" --
+// it's amount *structure*. A genuine amount carries a comma or period in the
+// grouping the GROUPED/CENTAVOS patterns already enforce; the phantom ("PHP
+// S", "PHP O") never does, because it is just the mark plus one bare letter
+// with nothing else. So a comma or period is accepted as proof of a real
+// amount too: a genuine amount's separator survives glyph-lookalike noise
+// even when every digit doesn't, making structure the more reliable signal
+// than any single digit.
 function hasRealDigit(match) {
-  return /\d/.test(match);
+  return /\d/.test(match) || /[,.]/.test(match);
 }
 
 // The one place that decides what counts as a money token, for both record
