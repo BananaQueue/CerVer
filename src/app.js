@@ -188,6 +188,14 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
   // Raised body limit for the same reason /api/frame has one: a phone photo is
   // megabytes, and Fastify's 1 MB default would reject it as a server error.
   app.post('/api/verify-page-image', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
+    // Off by default, exactly as /health already advertises and as /api/frame
+    // gates itself. /health's `pageImageOcr` field only lets the PAGE hide the
+    // button; it is not a gate, and without this check the endpoint answered
+    // every caller on every deployment while the comments above it said the
+    // feature was withheld pending Task 8's calibration (spec §9.2/§10).
+    if (process.env.CERVER_PAGE_IMAGE_OCR !== '1') {
+      return reply.code(404).send({ error: 'Page-image comparison is off.' });
+    }
     const data = await req.file();
     if (!data) return reply.code(400).send({ error: 'No image uploaded.' });
     const iisNo = (data.fields?.doc?.value || '').trim();
