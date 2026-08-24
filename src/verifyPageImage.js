@@ -3,6 +3,7 @@ import { extractPageTexts } from './pdfTools.js';
 import { compare, THRESHOLDS } from './pageCompare.js';
 import { recognize as defaultRecognize } from './ocr.js';
 import { locateFindings } from './ocrRegions.js';
+import { stripOcrFooter } from './ocrFooter.js';
 
 // Compare a photograph of a printed page against the page as it was sealed.
 //
@@ -75,7 +76,8 @@ export async function verifyPageImage(
     return bare('image_unreadable');
   }
 
-  const report = compare(read.text, authText);
+  const cleanedText = stripOcrFooter(read.text, read.words);
+  const report = compare(cleanedText, authText);
   const findings = locateFindings(report.findings, read.words);
   return done({ ...report, findings });
 }

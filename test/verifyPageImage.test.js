@@ -85,6 +85,33 @@ test('a located finding carries a region; an unlocatable one does not', async ()
   assert.equal(moneyFinding.region.x0, 0); // "P500,000.00" is the first word in the stub list above
 });
 
+test('a garbled footer reference does not produce a false-positive finding', async () => {
+  const { db } = await seed();
+  const bodyText = BODY;
+  // Reconstruct the same real garbled-footer reading used in Task 1's test,
+  // as words positioned at the bottom of the page, appended after BODY's own
+  // content so the OCR text plausibly represents one full page.
+  const bodyWords = bodyText.split(/\s+/).filter(Boolean).map((text, i) => ({
+    text, confidence: 0.8, bbox: { x0: i * 12, y0: 0, x1: i * 12 + 10, y1: 10 },
+  }));
+  const footerWords = ['4', '7', 'Be', 'R1-2026-010794', '=', '27>', '-', 'tea'].map((text, i) => ({
+    text, confidence: 0.4, bbox: { x0: i * 12, y0: 500, x1: i * 12 + 10, y1: 510 },
+  }));
+  const allWords = [...bodyWords, ...footerWords];
+  const ocrText = allWords.map((w) => w.text).join(' ');
+
+  const r = await verifyPageImage(db, Buffer.alloc(1), {
+    iisNo: 'R1-2026-000001', k: 1, ocr: stubOcr(ocrText, 0.9, allWords),
+  });
+
+  assert.equal(r.status, 'compared');
+  assert.deepEqual(
+    r.findings.filter((f) => f.severity === 'material'),
+    [],
+    'the garbled footer reference must not produce a material finding'
+  );
+});
+
 test('no region on any finding when the OCR stub supplies no words', async () => {
   const { db } = await seed();
   const r = await verifyPageImage(db, Buffer.alloc(1), {

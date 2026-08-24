@@ -16,6 +16,7 @@ import path from 'node:path';
 import { recognize, shutdownOcr } from '../src/ocr.js';
 import { compare } from '../src/pageCompare.js';
 import { extractPageTexts } from '../src/pdfTools.js';
+import { stripOcrFooter } from '../src/ocrFooter.js';
 
 const [pdfPath, dir] = process.argv.slice(2);
 if (!pdfPath || !dir) {
@@ -31,7 +32,11 @@ const rows = [];
 for (const f of files) {
   const [pageNo, label = 'genuine'] = path.parse(f).name.split('-');
   const read = await recognize(await fs.readFile(path.join(dir, f)));
-  const rep = compare(read.text, texts[Number(pageNo) - 1] ?? '');
+  // Matches verifyPageImage.js's real order -- stripOcrFooter runs on the OCR
+  // text before compare() sees it, same as the actual request path. Without
+  // this the script measures a pipeline that no longer exists.
+  const cleanedText = stripOcrFooter(read.text, read.words);
+  const rep = compare(cleanedText, texts[Number(pageNo) - 1] ?? '');
   const material = rep.findings.filter((x) => x.severity === 'material');
   rows.push({ f, label, rep, read, material });
   console.log([

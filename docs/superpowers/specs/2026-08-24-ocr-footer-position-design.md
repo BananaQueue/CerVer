@@ -107,6 +107,9 @@ place. Nothing here requires touching that module either.
 stripOcrFooter(text, words) => string
 ```
 
+**Revised during implementation, twice, against real photo data — both
+revisions kept because the reasoning matters as much as the result.**
+
 1. **Cluster `words` into lines by vertical position.** Group words whose
    bounding-box vertical centers fall within a tolerance of each other,
    where the tolerance is derived from the **median word height** across the
@@ -114,7 +117,31 @@ stripOcrFooter(text, words) => string
    photo's absolute resolution varies by phone and distance, so a fixed
    pixel tolerance would be wrong at some scale. Median height is a stable,
    scale-relative proxy for what "one line" means on this specific photo.
-2. **Take the bottommost cluster** as the footer candidate.
+   **Each cluster's words are then re-sorted left-to-right by x-position**
+   before being used for anything else. Grouping by y produces clusters in
+   y-sort order, not reading order — real OCR words on the same visual line
+   essentially never share an exact y-center (character-height/baseline
+   jitter), so left uncorrected this silently scrambled word order within a
+   line. The unit test fixtures originally gave every word on a synthetic
+   line the identical y-coordinate, which hid this completely (a stable sort
+   over equal keys preserves input order by coincidence) — it surfaced only
+   against a real photo, where removal was a silent no-op with no signal
+   anything had gone wrong. Fixtures now apply small deterministic y-jitter
+   per word specifically so this class of bug cannot hide again.
+2. **The candidate is not simply the single bottommost cluster.** A real
+   photo showed OCR-read content genuinely *below* the footer's own text —
+   stray symbol fragments read out of the pixelated seal-mark graphic
+   printed near the stamp — so the true bottommost cluster was pure noise
+   with no footer-shaped content at all, and the real footer sat one cluster
+   above it. The search instead scans upward from the bottom, bounded to
+   clusters whose vertical center falls in the **bottom quarter of the
+   page's own vertical extent** (not a fixed pixel distance or cluster
+   count — proportional, so it adapts to any page length or capture
+   resolution), and takes the first one that passes the content gate below.
+   A fixed *cluster count* was tried first in place of this proportional
+   band and is explicitly wrong: on a short or sparse page it reaches all
+   the way to a genuine top-of-page line, which this plan's own test suite
+   caught before it reached a real photo.
 3. **Content gate**, using `extractTokens()` — already exported from
    `src/pageCompare.js`, already reviewed, reused rather than reimplemented:
    the candidate line's joined text must contain at least one `reference` or
@@ -122,16 +149,22 @@ stripOcrFooter(text, words) => string
    tokens**. A real footer stamp never carries any of those; ordinary prose
    — including a page's genuine final sentence — often does. This is the
    condition that keeps the mechanism from ever touching a page whose last
-   body line legitimately states an amount or a date.
-4. **If the gate passes**, remove that exact line's text as a literal
-   substring from `text` and return the result. **If it does not**, return
-   `text` completely unchanged — untouched is the default; exclusion is the
-   narrow exception.
-5. **No `words`, or fewer than one clusterable line** (empty array,
-   `undefined`, or every word on top of every other) → return `text`
-   unchanged. Same fail-safe posture as `locateFindings()`: a data shape
-   this function cannot use degrades to today's behavior, never an error,
-   never a different comparison outcome than if this feature did not exist.
+   body line legitimately states an amount or a date. Every candidate
+   examined within the bottom band gets this same, unweakened gate — the
+   proportional band only controls how far up the search is allowed to look
+   past pure noise, never what counts as footer-shaped once it's looking.
+4. **If the gate passes**, remove that exact line's text — matched via a
+   flexible-whitespace pattern built from the same (now reading-order)
+   words, not an exact substring match, since Tesseract's own flat text may
+   not join words with a single space the way this function's gate-check
+   text does — and return the result. **If nothing in the bottom band
+   passes**, return `text` completely unchanged — untouched is the default;
+   exclusion is the narrow exception.
+5. **No `words`, or nothing clusterable** (empty array, `undefined`, or
+   every word on top of every other) → return `text` unchanged. Same
+   fail-safe posture as `locateFindings()`: a data shape this function
+   cannot use degrades to today's behavior, never an error, never a
+   different comparison outcome than if this feature did not exist.
 
 Wired into `src/verifyPageImage.js`, one line before the existing `compare`
 call:
@@ -171,16 +204,20 @@ discipline as `test/ocrRegions.test.js`.
 ## 6. Honest limits
 
 - **The blind spot in §2 is real and is not softened by anything in this
-  design.** Content positioned in a page's bottommost recognized line, shaped
-  like a footer stamp (reference-only, no money/date/duration), is excluded
-  from this comparison regardless of what its digits actually say.
-- **Line clustering depends on OCR's own word positions being roughly
-  sane.** A severely warped or folded photo could misplace what counts as
-  "bottommost" — in that case the mechanism either misses the real footer
-  (no worse than today) or, in a pathological case, clusters a genuine line
-  together with the footer. The content gate (§4.3) is what limits the
-  damage: a merged cluster that also contains a money/date/duration token
-  fails the gate and nothing is excluded.
+  design.** Content positioned in a page's bottom quarter, shaped like a
+  footer stamp (reference-only, no money/date/duration), is excluded from
+  this comparison regardless of what its digits actually say — the search
+  band, not a single line, per §4.2.
+- **Line clustering, and the bottom-band boundary itself, depend on OCR's
+  own word positions being roughly sane.** A severely warped or folded
+  photo could distort what counts as "the bottom quarter" — the band is
+  computed from the min/max of every word's own bounding box, so one
+  wildly misplaced outlier word could skew it. In that case the mechanism
+  either misses the real footer (no worse than today) or, in a pathological
+  case, clusters a genuine line together with the footer. The content gate
+  (§4.3) is what limits the damage either way: a merged or misplaced
+  cluster that also contains a money/date/duration token fails the gate and
+  nothing is excluded.
 - **This does not make `MIN_CONFIDENCE` or `THRESHOLDS.samePageMin` any
   more measured than the 2026-08-24 calibration already recorded them as.**
   Those remain exactly what that calibration run established (`samePageMin`

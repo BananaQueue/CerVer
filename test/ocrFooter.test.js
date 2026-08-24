@@ -3,20 +3,34 @@ import assert from 'node:assert/strict';
 import { stripOcrFooter } from '../src/ocrFooter.js';
 
 // bbox y-coordinates grow downward (image/screen convention, same as
-// Tesseract's own bbox). A word is 10px tall by default here; x-position
-// only needs to keep words distinct on the same line, it plays no role in
-// clustering.
+// Tesseract's own bbox). A word is 10px tall by default here. x-position
+// keeps words distinct and in left-to-right reading order.
+//
+// Deterministic small y-JITTER is applied per word (a fixed repeating
+// offset pattern, not random -- reproducible, but never identical between
+// consecutive words). Real OCR words on the same visual line essentially
+// never share an exact y-center; a fixture that gives every word on a line
+// the identical y hides exactly the class of bug this jitter caught during
+// implementation (clustering silently scrambled reading order, and nothing
+// here noticed until a real photo, at which point removal was a silent
+// no-op). Y-JITTER is intentionally smaller than half the word height, so
+// it never breaks clustering itself -- only reading order within a cluster.
+const Y_JITTER = [0, 2, -1, 1, -2, 1, -1, 2];
 let nextX = 0;
+let jitterIndex = 0;
 const wordAt = (text, y, opts = {}) => {
   const x0 = opts.x0 ?? nextX;
   nextX = x0 + 20;
+  const jitter = Y_JITTER[jitterIndex % Y_JITTER.length];
+  jitterIndex++;
+  const jitteredY = y + jitter;
   return {
     text,
     confidence: opts.confidence ?? 0.8,
-    bbox: { x0, y0: y, x1: x0 + 15, y1: y + (opts.height ?? 10) },
+    bbox: { x0, y0: jitteredY, x1: x0 + 15, y1: jitteredY + (opts.height ?? 10) },
   };
 };
-const resetX = () => { nextX = 0; };
+const resetX = () => { nextX = 0; jitterIndex = 0; };
 
 test('removes a garbled footer line that still carries a misread reference', () => {
   resetX();
