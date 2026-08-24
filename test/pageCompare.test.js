@@ -235,6 +235,25 @@ test('letter-for-digit OCR noise in a control number is suppressed, not reported
   assert.deepEqual(materials(r), []);
 });
 
+// Real case, live-tested 2026-08-24: the record's flattened, line-break-free
+// text carries a page's title as one unbroken run ("DEPARTMENT OF ENVIRONMENT
+// AND NATURAL RESOURCES"), but the real printed page wraps that same title
+// across two physical lines. Tesseract keeps real line breaks, so its reading
+// splits at the wrap -- and if the trailing word lands alone on its own
+// printed line, it fails the name pattern's 2-word minimum and is never
+// extracted as a token at all, not even a mangled one. The photo's 5-word
+// match against the record's 6-word value used to report as a tolerant
+// "difference put down to the camera" even though nothing was misread --
+// it's the same title, just wrapped differently than the flattened record
+// text implies. One side reading a clean prefix of the other's exact value
+// is that specific, known-shape artifact, not camera noise to surface.
+test('a title split across a real printed line-wrap is not reported as a camera-noise difference', () => {
+  const auth = AUTH.replace('ORDER OF THE REGIONAL DIRECTOR', 'DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES');
+  const ocr = auth.replace('DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES', 'DEPARTMENT OF ENVIRONMENT AND NATURAL');
+  const r = compare(ocr, auth);
+  assert.deepEqual(r.findings, []);
+});
+
 test('an amount the record does not carry is material, reason added', () => {
   const r = compare(AUTH + '\nAn extra fee of ₱9,999.00 applies.', AUTH);
   const f = materials(r).find((x) => x.reason === 'added');

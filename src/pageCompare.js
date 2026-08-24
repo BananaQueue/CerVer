@@ -474,6 +474,22 @@ function reasonFor(expected, found) {
   return 'text';
 }
 
+// True when one key is the other continued word-for-word, from the start --
+// never a partial-word coincidence, since both sides are split on the single
+// space keyFor already collapses whitespace to. This is the record's total
+// lack of line-break info meeting a real printed wrap: the record's flattened
+// text has no boundary where a title genuinely wraps to a second physical
+// line, and if the trailing word lands alone on that line, it fails the name
+// pattern's 2-word minimum and never becomes a token the photo side can even
+// offer -- so the photo's token is a clean truncation of the record's, not a
+// misread of it.
+function isWrapPrefix(a, b) {
+  const wa = a.split(' ');
+  const wb = b.split(' ');
+  const [shorter, longer] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  return shorter.length > 0 && shorter.every((w, i) => longer[i] === w);
+}
+
 function indexByKey(tokens) {
   const m = new Map();
   for (const t of tokens) {
@@ -544,6 +560,7 @@ export function compare(ocrText, authText) {
     }
     if (near) consumedNear.add(near);
     if (!strict) {
+      if (near && isWrapPrefix(keyFor(t.cls, t.value), keyFor(near.cls, near.value))) continue;
       suppressed++;
       findings.push({
         severity: 'tolerant', cls: t.cls, line: t.line,
