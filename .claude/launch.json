@@ -9,6 +9,16 @@
       "env": {
         "CERVER_FRAME_CAPTURE": "1"
       }
+    },
+    {
+      "name": "cerver-ocr",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 3100,
+      "env": {
+        "CERVER_FRAME_CAPTURE": "1",
+        "CERVER_PAGE_IMAGE_OCR": "1"
+      }
     }
   ]
 }

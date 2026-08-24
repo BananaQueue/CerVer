@@ -78,6 +78,20 @@ test('extractTokens finds control numbers and citations', () => {
   assert.deepEqual(byClass(t, 'citation'), ['Section 12', 'Rule III']);
 });
 
+// Real case, 2026-08-24 calibration (test/fixtures/pages/1-genuine-b.jpg):
+// Tesseract read the body's "Control No. R1-2026-010734" as "Rt-2026-010734"
+// -- the digit right after R misread as a lookalike letter. The old pattern
+// required a literal \d there, so the token wasn't just wrong, it was
+// invisible to extraction entirely, and compare() reported the record's real
+// reference as "missing" on an untampered page. money and citation already
+// tolerate this class of noise via the DIGITISH character class at the
+// extraction regex itself (see LOOSE_MONEY, CITATION_NUMERAL); reference was
+// the one strict class still using bare \d.
+test('extractTokens recognizes a control number even when a digit reads as a lookalike letter', () => {
+  const t = extractTokens('Per Rt-2026-010734 under Section 12.');
+  assert.deepEqual(byClass(t, 'reference'), ['Rt-2026-010734']);
+});
+
 test('extractTokens finds runs of two or more capitalised words as names', () => {
   const t = extractTokens('Issued to ACME MINING CORPORATION by the office.');
   assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORPORATION']);
@@ -212,6 +226,12 @@ test('letter-for-digit OCR noise using an uppercase-only lookalike (B for 8) is 
   // own lowercase entries. B->b is not in the map, so it never folded back.
   const auth = AUTH.replace('₱50,000.00', '₱58,000.00');
   const r = compare(auth.replace('₱58,000.00', '₱5B,000.00'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+test('letter-for-digit OCR noise in a control number is suppressed, not reported', () => {
+  const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-010734.');
+  const r = compare(auth.replace('R1-2026-010734', 'Rt-2026-010734'), auth);
   assert.deepEqual(materials(r), []);
 });
 

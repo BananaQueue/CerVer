@@ -14,17 +14,17 @@ import { stripOcrFooter } from './ocrFooter.js';
 // Below this, the reading is too poor to say anything about the page. Reported
 // as a request for a better photo — never as a finding.
 //
-// CONSERVATIVE, NOT MEASURED (2026-08-24). Spec §9.2's intent — above every
-// `poor`-labelled capture's confidence, below every `genuine` one — could not
-// be honored: every attempted `poor` photo (angle, then a second angle plus
-// reduced framing) read at 0.750-0.760, ABOVE the lowest genuine reading
-// (0.720), because the iPhone's Deep Fusion pipeline (on by default, no user
-// setting to disable it) kept correcting the deliberately bad captures back
-// to something legible. So this sits with margin below the lowest genuine
-// confidence actually measured (0.720), not from a real poor/genuine gap.
-// Tighten this once a capture exists that Deep Fusion cannot rescue —
-// genuine motion blur or a dim handheld shot, not angle alone.
-const MIN_CONFIDENCE = 0.55;
+// MEASURED (2026-08-24, real poor/genuine gap). Most `poor`-labelled attempts
+// (angle, reduced framing) still read at 0.740-0.760 — ABOVE the lowest
+// genuine reading — because the iPhone's Deep Fusion pipeline (on by default,
+// no user setting to disable it) corrects deliberately bad captures back to
+// something legible. That limitation is accepted, not fixed here: confidence
+// alone cannot catch every poor photo, only genuinely degraded ones. Two
+// captures did get past Deep Fusion (real motion blur / dim handheld shake):
+// 0.470 and 0.550, both clearly below the lowest genuine reading measured
+// across 10 genuine samples (0.720). This sits with margin on both sides of
+// that real gap, not a guess above the genuine floor.
+const MIN_CONFIDENCE = 0.65;
 
 export async function verifyPageImage(
   db,

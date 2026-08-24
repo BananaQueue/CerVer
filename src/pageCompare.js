@@ -15,7 +15,7 @@ import { stripFooter } from './sealCode.js';
 // changed 1 to 4", so we never forgive it.
 const GLYPH_FOLD = new Map([
   ['O', '0'], ['o', '0'], ['Q', '0'], ['D', '0'],
-  ['l', '1'], ['I', '1'], ['|', '1'],
+  ['l', '1'], ['I', '1'], ['|', '1'], ['t', '1'],
   ['S', '5'], ['B', '8'], ['Z', '2'], ['G', '6'],
 ]);
 
@@ -87,6 +87,14 @@ const MONTH = 'January|February|March|April|May|June|July|August|September|Octob
 // get a chance to forgive it. LOOSE_MONEY just below reuses the same class
 // for the same reason, on amounts instead of citations.
 const DIGITISH = '0-9OoQDlI|SBZG';
+
+// reference's own extraction class, DIGITISH plus 't' -- a real 2026-08-24
+// misread ("R1-2026-010734" -> "Rt-2026-010734") not covered by GLYPH_FOLD's
+// other six letters, which are the classic OCR digit lookalikes (O/0, l/1,
+// S/5, B/8, Z/2, G/6). 't' isn't one of those, so it's kept out of the shared
+// DIGITISH used by money and citation -- widening it there was never reviewed
+// for those classes and isn't needed to fix this.
+const REFERENCE_DIGITISH = `${DIGITISH}t`;
 
 // A citation numeral's digit-lookalike run must contain at least one of these
 // to count as a numeral at all: a real digit, or the pipe OCR produces for a
@@ -337,7 +345,7 @@ const CITATION_NUMERAL = String.raw`[IVXLC]+|(?=[${DIGITISH}]*[${CITATION_ANCHOR
 const TOKEN_PATTERNS = [
   ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
-  ['reference', new RegExp(String.raw`\bR\d-\d{4}-\d{6}\b|\bNo\.\s?\d{2}-\d{3,6}\b`, 'g')],
+  ['reference', new RegExp(String.raw`\bR[${REFERENCE_DIGITISH}]-[${REFERENCE_DIGITISH}]{4}-[${REFERENCE_DIGITISH}]{6}\b|\bNo\.\s?[${REFERENCE_DIGITISH}]{2}-[${REFERENCE_DIGITISH}]{3,6}\b`, 'g')],
   ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:${CITATION_NUMERAL})(?![A-Za-z0-9])`, 'gi')],
   // Capped at 6 words total (1 + up to 5 more) -- unbounded, this spans
   // across what were genuinely two separate printed title lines whenever
@@ -377,6 +385,12 @@ export function extractTokens(text) {
       re.lastIndex = 0;
       let m;
       while ((m = re.exec(masked)) !== null) {
+        // reference's shape is rigid enough (R + dash-delimited 1/4/6-length
+        // groups) that an all-lookalike-letters match is effectively
+        // impossible in real prose, but the same guard money already applies
+        // to its own DIGITISH run is free insurance against a phantom token
+        // built from zero real digits.
+        if (cls === 'reference' && !hasRealDigit(m[0])) continue;
         claimed[i].push([m.index, m.index + m[0].length]);
         out.push({ cls, value: m[0], line: i + 1 });
       }
