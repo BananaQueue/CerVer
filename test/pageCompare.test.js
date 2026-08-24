@@ -87,6 +87,28 @@ test('extractTokens does not call a single capitalised word a name', () => {
   assert.deepEqual(byClass(extractTokens('The DENR office.'), 'name'), []);
 });
 
+// A record page's text has no line breaks at all (extractPageTexts flattens
+// the whole page into one string) -- unlike a photo's OCR reading, which
+// keeps real ones. Left unbounded, the name pattern greedily spans across
+// what were genuinely two separate printed title lines whenever they're
+// both ALL-CAPS and land adjacent in that flattened text, merging two real
+// names into one token the photo side never produces -- reported live
+// 2026-08-24 as a false "difference" on an untampered page: the record's
+// merged "DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES ENVIRONMENTAL
+// MANAGEMENT BUREAU" against the photo's correctly-separate two names.
+// Capped at 6 words, the longest genuine single name observed in this
+// project's real documents ("DEPARTMENT OF ENVIRONMENT AND NATURAL
+// RESOURCES") -- a heuristic bound from observed data, not a rule from a
+// document standard, and worth revisiting if a longer legitimate single
+// name is ever found to be wrongly split by it.
+test('extractTokens does not merge two adjacent printed title lines into one name', () => {
+  const t = extractTokens('DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES ENVIRONMENTAL MANAGEMENT BUREAU');
+  assert.deepEqual(byClass(t, 'name'), [
+    'DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES',
+    'ENVIRONMENTAL MANAGEMENT BUREAU',
+  ]);
+});
+
 test('extractTokens records the 1-based line each token sits on', () => {
   const t = extractTokens('first line\nsecond has ₱50,000.00\nthird line');
   assert.equal(t.find((x) => x.cls === 'money').line, 2);
