@@ -329,6 +329,42 @@ measured:
 Until (1) holds on real photographs, the feature is not shipped, regardless of
 how the synthetic tests read.
 
+**Measured 2026-08-24**, iPhone camera, ordinary office lighting, against
+`scripts/print-test-sealed.pdf` (`R1-2026-010734`). 5 photographs: 2 genuine,
+1 deliberately altered (control number `R1-2026-010734` → `R1-2026-010784`),
+1 attempted-poor, 1 page of an unrelated document (`R1-2025-025065`).
+
+1. **Holds**, on the 2 genuine pages measured: zero material findings on
+   either. Not yet at the plan's full 5-genuine minimum — see the caveat
+   below.
+2. **Set: `samePageMin = 0.4`** (`src/pageCompare.js`). Genuine similarity
+   floor `0.739`, other-page ceiling `0.000` — a wide gap, margin on both
+   sides.
+3. **Not established from real data.** Every attempted `poor` capture (one
+   angled, one angled with reduced framing) read at confidence `0.750`–
+   `0.760` — *above* the lowest genuine reading (`0.720`), not below it,
+   because the capture phone's Deep Fusion pipeline (on by default on
+   current iPhones, no setting to disable it) corrected the deliberately
+   degraded photos back to something legible. `MIN_CONFIDENCE = 0.55`
+   (`src/verifyPageImage.js`) is set conservatively below the lowest genuine
+   reading actually measured, not from a real poor/genuine gap. This needs
+   revisiting once a capture exists that Deep Fusion cannot rescue —
+   real motion blur or a dim handheld shot, not steeper angle alone, which
+   was tried twice and both times came back legible.
+4. **Caught.** The deliberate control-number change was flagged material
+   with the correct before/after values. One additional, unrelated material
+   finding appeared alongside it on the same photo — the control number read
+   a second time (likely once from the body text, once from the footer) and
+   misread on that second pass; a known, pre-existing noise source (see
+   `docs/superpowers/plans/2026-08-13-page-image-ocr.md`'s Task 5 notes on
+   footer-stripping under OCR noise), not something this alteration
+   introduced.
+
+**Caveat on this round.** Only one `poor` and one `other` sample exist, and
+`genuine` is at 2 of the plan's 5. The `samePageMin` gap is wide enough that
+more genuine samples are unlikely to close it, but the floor and ceiling
+above should be treated as a first measurement, not a final one.
+
 ## 10. Honest limits
 
 - **Not proof, and never rendered as proof.** §2 governs. The seal remains the

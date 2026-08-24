@@ -379,13 +379,17 @@ export function extractTokens(text) {
   return out.sort((a, b) => a.line - b.line);
 }
 
-// PROVISIONAL — not yet calibrated against real photographs. Spec §9.2 requires
-// these be measured on photographs of real printed pages before the feature is
-// announced to staff; renders of the PDF are not admissible evidence for them.
-// See docs/superpowers/plans/2026-08-13-page-image-ocr.md Task 8.
+// Calibrated 2026-08-24 against real phone photographs of real printed pages
+// (test/fixtures/pages/, scripts/ocr-calibrate.mjs) — not renders, per spec
+// §9.2. From 2 genuine pages and 1 page of a different document: genuine
+// similarity floor 0.739, other-page ceiling 0.000. samePageMin sits with wide
+// margin on both sides of that gap. Revisit once the fixture set reaches the
+// plan's full 5 genuine / 1 other minimum — this round only had one of each
+// non-genuine label, so the floor/ceiling could still shift.
 export const THRESHOLDS = {
-  samePageMin: 0.6, // below this, the photo is not this page at all
-  minWords: 20, // below this, OCR did not read enough to say anything
+  samePageMin: 0.4, // below this, the photo is not this page at all
+  minWords: 20, // below this, OCR did not read enough to say anything — not
+  // recalibrated this round; no criterion in Task 8 measured it directly
 };
 
 const STRICT = new Set(['money', 'date', 'duration', 'reference', 'citation']);

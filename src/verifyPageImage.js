@@ -13,13 +13,17 @@ import { locateFindings } from './ocrRegions.js';
 // Below this, the reading is too poor to say anything about the page. Reported
 // as a request for a better photo — never as a finding.
 //
-// PROVISIONAL — not yet calibrated against real photographs, same as
-// THRESHOLDS in src/pageCompare.js. Spec §9.2 requires this be measured on
-// photographs of real printed pages before the feature is announced to
-// staff: above every `poor`-labelled capture's confidence, below every
-// `genuine` one. See docs/superpowers/plans/2026-08-13-page-image-ocr.md
-// Task 8.
-const MIN_CONFIDENCE = 0.5;
+// CONSERVATIVE, NOT MEASURED (2026-08-24). Spec §9.2's intent — above every
+// `poor`-labelled capture's confidence, below every `genuine` one — could not
+// be honored: every attempted `poor` photo (angle, then a second angle plus
+// reduced framing) read at 0.750-0.760, ABOVE the lowest genuine reading
+// (0.720), because the iPhone's Deep Fusion pipeline (on by default, no user
+// setting to disable it) kept correcting the deliberately bad captures back
+// to something legible. So this sits with margin below the lowest genuine
+// confidence actually measured (0.720), not from a real poor/genuine gap.
+// Tighten this once a capture exists that Deep Fusion cannot rescue —
+// genuine motion blur or a dim handheld shot, not angle alone.
+const MIN_CONFIDENCE = 0.55;
 
 export async function verifyPageImage(
   db,
