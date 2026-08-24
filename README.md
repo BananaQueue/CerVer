@@ -162,6 +162,9 @@ retyped text. That is caught either by **Full check** on the digital PDF (exact,
 automatic) or by a human comparing against the authoritative page the app
 displays.
 
+The photo check sits between those two. It is the human comparison done faster
+and without skipping the digit that matters, not a third kind of proof.
+
 ### Seal key management
 
 HMAC secrets are never stored in the DB. Set `CERVER_SEAL_KEYS` to a JSON map of
