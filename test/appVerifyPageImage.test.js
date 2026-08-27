@@ -6,8 +6,11 @@ import { buildApp } from '../src/app.js';
 // The route is now gated off by default (spec §9.2/§10, Task 8 calibration) and
 // answers 404 without this -- every assertion below would then pass or fail for
 // the gate's reason rather than its own. Set for the whole file: `node --test`
-// runs each test file in its own process, so this cannot leak into the gate
-// test (test/appVerifyPageImageGate.test.js), which owns the off case.
+// The route is on by default now, so this line is no longer load-bearing --
+// kept anyway, explicit rather than implicit, so this file's assertions hold
+// regardless of the default. node:test runs each test file in its own
+// process, so this cannot leak into the gate test
+// (test/appVerifyPageImageGate.test.js), which owns the off (CERVER_PAGE_IMAGE_OCR=0) case.
 process.env.CERVER_PAGE_IMAGE_OCR = '1';
 
 const kp = { currentKid: () => '1', secretFor: () => 'test-secret' };

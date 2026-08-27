@@ -39,16 +39,13 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
   // 404s. The page cannot read the server's environment, so it asks here.
   //
   // `pageImageOcr` gates a real feature the same way, for a different reason:
-  // spec §9.2 makes shipping it conditional on Task 8's calibration against
-  // real photographs, which has not been run (THRESHOLDS and MIN_CONFIDENCE
-  // are still PROVISIONAL guesses), and spec §10 says it is not announced to
-  // staff until it is measured. A real end-to-end run already produced a
-  // material false positive on a genuine page (see progress.md, Task 7). Off
-  // by default; set CERVER_PAGE_IMAGE_OCR=1 once calibration lands.
+  // spec §9.2's calibration against real photographs is measured and holds
+  // (2026-08-25) -- on by default. CERVER_PAGE_IMAGE_OCR=0 is a kill switch,
+  // not the normal state; explicitly OFF, not merely unset, is what disables it.
   app.get('/health', async () => ({
     ok: true,
     frameCapture: process.env.CERVER_FRAME_CAPTURE === '1',
-    pageImageOcr: process.env.CERVER_PAGE_IMAGE_OCR === '1',
+    pageImageOcr: process.env.CERVER_PAGE_IMAGE_OCR !== '0',
   }));
 
   // ---- Transaction verification (existing) ----
@@ -188,12 +185,13 @@ export function buildApp({ db, verify, keyProvider, sealedDir, https, resolveQr 
   // Raised body limit for the same reason /api/frame has one: a phone photo is
   // megabytes, and Fastify's 1 MB default would reject it as a server error.
   app.post('/api/verify-page-image', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
-    // Off by default, exactly as /health already advertises and as /api/frame
-    // gates itself. /health's `pageImageOcr` field only lets the PAGE hide the
-    // button; it is not a gate, and without this check the endpoint answered
-    // every caller on every deployment while the comments above it said the
-    // feature was withheld pending Task 8's calibration (spec §9.2/§10).
-    if (process.env.CERVER_PAGE_IMAGE_OCR !== '1') {
+    // On by default, exactly as /health already advertises. CERVER_PAGE_IMAGE_OCR=0
+    // is a kill switch, not the normal state -- explicitly OFF, not merely
+    // unset, is what withholds the route. /health's `pageImageOcr` field only
+    // lets the PAGE hide the button; it is not a gate on its own, so this
+    // check has to refuse independently, the way /api/frame does for
+    // CERVER_FRAME_CAPTURE.
+    if (process.env.CERVER_PAGE_IMAGE_OCR === '0') {
       return reply.code(404).send({ error: 'Page-image comparison is off.' });
     }
     const data = await req.file();

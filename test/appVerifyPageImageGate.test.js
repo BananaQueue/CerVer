@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { openDb } from '../src/db.js';
 import { buildApp } from '../src/app.js';
 
-// The page-image comparison endpoint is withheld until Task 8's calibration
-// against real photographs lands (spec §9.2/§10, and the comment on the route
-// itself). /health advertises that state so the frontend can hide the button,
-// but /health is not a gate -- the route has to refuse on its own, the way
-// /api/frame does for CERVER_FRAME_CAPTURE.
+// The page-image comparison endpoint shipped on by default 2026-08-25, once
+// spec §9.2's calibration criteria held against real photographs.
+// CERVER_PAGE_IMAGE_OCR=0 remains a kill switch -- explicitly OFF, not merely
+// unset, is what withholds the route. /health advertises the same state so
+// the frontend can hide the button, but /health is not a gate -- the route
+// has to refuse on its own, the way /api/frame does for CERVER_FRAME_CAPTURE.
 //
 // Both directions, in one file so the env var is set and cleared per test
 // rather than per process: this branch has shipped a one-directional flag test
@@ -47,11 +48,11 @@ async function withFlag(value, fn) {
   }
 }
 
-test('the page-image route is 404 while the feature is off', async () => {
-  await withFlag(undefined, async () => {
-    // A well-formed request that WOULD be answered when the flag is set (see
-    // the next test) -- so a 404 here can only come from the gate, not from
-    // the route's own validation.
+test('the page-image route is 404 when explicitly disabled', async () => {
+  await withFlag('0', async () => {
+    // A well-formed request that WOULD be answered by default (see the next
+    // test) -- so a 404 here can only come from the gate, not from the
+    // route's own validation.
     const { body, headers } = form({ doc: 'R1-2099-999999', k: '1' }, Buffer.alloc(8));
     const res = await appFor().inject({
       method: 'POST', url: '/api/verify-page-image', headers, payload: body,
@@ -61,8 +62,8 @@ test('the page-image route is 404 while the feature is off', async () => {
   });
 });
 
-test('the page-image route answers normally once the feature is enabled', async () => {
-  await withFlag('1', async () => {
+test('the page-image route answers normally by default', async () => {
+  await withFlag(undefined, async () => {
     const { body, headers } = form({ doc: 'R1-2099-999999', k: '1' }, Buffer.alloc(8));
     const res = await appFor().inject({
       method: 'POST', url: '/api/verify-page-image', headers, payload: body,
@@ -72,15 +73,15 @@ test('the page-image route answers normally once the feature is enabled', async 
   });
 });
 
-test('health reports the page-image feature off, so the page can hide the button', async () => {
-  await withFlag(undefined, async () => {
+test('health reports the page-image feature off when explicitly disabled', async () => {
+  await withFlag('0', async () => {
     const r = await appFor().inject({ method: 'GET', url: '/health' });
     assert.equal(JSON.parse(r.body).pageImageOcr, false);
   });
 });
 
-test('health reports the page-image feature on when it is enabled', async () => {
-  await withFlag('1', async () => {
+test('health reports the page-image feature on by default', async () => {
+  await withFlag(undefined, async () => {
     const r = await appFor().inject({ method: 'GET', url: '/health' });
     assert.equal(JSON.parse(r.body).pageImageOcr, true);
   });

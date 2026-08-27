@@ -15,8 +15,9 @@ import { buildApp } from '../src/app.js';
 // broken engine as "Couldn't reach the service" (task 7 fix 2c covers that
 // side separately).
 
-// Same reason as in test/appVerifyPageImage.test.js: the route is gated off by
-// default now, so without this the 502 assertion below would never be reached.
+// Same reason as in test/appVerifyPageImage.test.js: no longer load-bearing
+// now that the route is on by default, kept explicit anyway so this file's
+// 502 assertion below holds regardless of the default.
 process.env.CERVER_PAGE_IMAGE_OCR = '1';
 
 const kp = { currentKid: () => '1', secretFor: () => 'test-secret' };

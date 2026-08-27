@@ -60,7 +60,9 @@ test('health reports diagnostics off, so the page can hide the button', async ()
     // pageImageOcr rides the same /health shape, gating a different feature
     // (see src/app.js) -- included here so this stays a real deepEqual on
     // the whole response rather than silently drifting into a subset check.
-    assert.deepEqual(JSON.parse(r.body), { ok: true, frameCapture: false, pageImageOcr: false });
+    // This test only touches CERVER_FRAME_CAPTURE, so pageImageOcr reflects
+    // its own default: on unless CERVER_PAGE_IMAGE_OCR is explicitly '0'.
+    assert.deepEqual(JSON.parse(r.body), { ok: true, frameCapture: false, pageImageOcr: true });
   } finally {
     if (prev === undefined) delete process.env.CERVER_FRAME_CAPTURE;
     else process.env.CERVER_FRAME_CAPTURE = prev;
