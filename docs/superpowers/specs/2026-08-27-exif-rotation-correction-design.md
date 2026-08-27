@@ -1,7 +1,7 @@
 # Page Image OCR — Correcting EXIF-Rotated Captures Before OCR — Design
 
 **Date:** 2026-08-27
-**Status:** Scope narrowed after real-photo testing disconfirmed the original hypothesis — see §1a. Approved as a correctness fix in its own right, not as a fix for the garbling that motivated it.
+**Status:** Dropped, not implemented. §1a disconfirmed the original hypothesis against real data; a further check found an *existing* calibration fixture (`2-genuine.jpg`, EXIF orientation 8) has been fed to Tesseract uncorrected all session with clean results, undercutting even the "correct in principle" justification for keeping this — see §1b. `sharp` was installed, verified, then removed; no source changed.
 **Extends:** `2026-08-13-page-image-ocr-design.md`
 
 ## 1. Problem
@@ -73,11 +73,29 @@ Rationalizations table in `superpowers:systematic-debugging`: guessing a
 third cause after two failed would be exactly the pattern that skill warns
 against.
 
-**Decision:** implement the EXIF-rotation fix anyway, on its own merits —
-processing an image in its intended orientation is correct regardless of
-whether it explains this particular photo's garbling — and accept that
-photo's title-block scrambling as an unexplained, undiagnosed capture-
-quality issue, not a bug this design closes. See §5.
+**Decision, revised (§1b):** implementing the fix anyway "on principle" was
+the initial call, but a further check undercut even that: `2-genuine.jpg`,
+already in the calibration set, has EXIF orientation `8` and has been fed
+to Tesseract uncorrected for the entire session with clean results. Real
+evidence now shows an uncorrected non-standard orientation working fine on
+one photo, and correction not fixing the other — neither data point
+demonstrates this pipeline benefits from the fix. Dropped rather than kept
+as an unproven "belt and suspenders" addition.
+
+## 1b. Dropped
+
+Not implemented. `sharp` was installed and its rotation behavior verified
+directly (§1a), then removed — `package.json`/`package-lock.json` show no
+trace. `test/fixtures/pages/2-genuine-rotated.jpg` is kept in the
+calibration set as a real, reproducible sample of unexplained title-block
+scrambling, for whoever investigates it next; it produces no material
+finding today, only elevated tolerant-noise count, so its presence does not
+by itself fail any shipping criterion.
+
+The rest of this document (§2-§6 below) describes the mechanism that was
+designed and verified not to be worth keeping — left intact as a record of
+what was tried, per this project's established practice of keeping failed
+approaches visible rather than erasing them.
 
 ## 2. What this adds
 
