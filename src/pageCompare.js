@@ -433,12 +433,20 @@ const THOUSANDS_SEP = /[,.](?=\d{3}(?:\D|$))/g;
 
 function keyFor(cls, value) {
   const collapsed = String(value).replace(/\s+/g, ' ').trim();
-  if (cls === 'name') return foldNameNoise(collapsed.toLowerCase());
   // Fold before lowercasing, not after: GLYPH_FOLD's B, D, Q, S, Z, G entries
-  // are uppercase-only (no lowercase counterpart), so folding a
-  // pre-lowercased string leaves six of the map's eight letter rules dead.
-  // Folding the original-case value first keeps every entry live.
-  const key = foldGlyphs(collapsed).toLowerCase().replace(/^(?:php|p)\s?/, '₱');
+  // are uppercase-only (no lowercase counterpart -- neither is 'I', despite
+  // 'i' looking like it should count), so folding a pre-lowercased string
+  // leaves several of the map's letter rules dead. This never mattered for
+  // 'name' specifically -- its extraction pattern is letters-only, so a
+  // digit-substituted word (the only thing this fold ever forgives) can
+  // never form a valid name token to begin with, on either side, at any
+  // fold order. It matters here because 'field' (below) extracts its value
+  // with no such restriction -- real calibration data found a genuine
+  // "Category B" photographed as "Category 8", which only this order
+  // forgives.
+  const foldedCase = foldGlyphs(collapsed).toLowerCase();
+  if (cls === 'name' || cls === 'field') return foldLetterNoise(foldedCase);
+  const key = foldedCase.replace(/^(?:php|p)\s?/, '₱');
   // Money only. reasonFor's digit-count comparison is unaffected: digitsOf
   // drops every non-digit anyway, so materiality is decided on real digits
   // (50,000 -> 5 vs 500,000 -> 6) regardless of what the key does.
@@ -454,10 +462,14 @@ function keyFor(cls, value) {
   return key.replace(THOUSANDS_SEP, '').replace(/,(?=\d{2}$)/, '.');
 }
 
-// Tolerant classes: fold the confusions that dominate OCR of long words, so a
-// name is only reported when it differs by more than the camera plausibly does.
-function foldNameNoise(s) {
-  return foldGlyphs(s).replace(/rn/g, 'm').replace(/cl/g, 'd').replace(/vv/g, 'w');
+// Multi-letter OCR confusions that dominate long words -- shared by tolerant
+// name comparison and strict field-value comparison (see keyFor above).
+// Kept separate from foldGlyphs, a single-character map reused by
+// money/reference/citation too that must run before lowercasing; these
+// letter-RUN folds only make sense on an already-lowercased string, which
+// keyFor guarantees before calling this.
+function foldLetterNoise(s) {
+  return s.replace(/rn/g, 'm').replace(/cl/g, 'd').replace(/vv/g, 'w');
 }
 
 function digitsOf(s) {
