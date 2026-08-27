@@ -15,8 +15,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { recognize, shutdownOcr } from '../src/ocr.js';
 import { compare } from '../src/pageCompare.js';
-import { extractPageTexts } from '../src/pdfTools.js';
+import { extractPageTextsWithLines } from '../src/pdfTools.js';
 import { stripOcrFooter } from '../src/ocrFooter.js';
+import { locateFindings } from '../src/ocrRegions.js';
 
 const [pdfPath, dir] = process.argv.slice(2);
 if (!pdfPath || !dir) {
@@ -24,7 +25,7 @@ if (!pdfPath || !dir) {
   process.exit(2);
 }
 
-const texts = await extractPageTexts(await fs.readFile(pdfPath));
+const texts = await extractPageTextsWithLines(await fs.readFile(pdfPath));
 const files = (await fs.readdir(dir)).filter((f) => /\.(jpe?g|png)$/i.test(f)).sort();
 
 console.log(['file', 'label', 'similarity', 'confidence', 'words', 'material', 'suppressed', 'status'].join('\t'));
@@ -38,7 +39,9 @@ for (const f of files) {
   const cleanedText = stripOcrFooter(read.text, read.words);
   const rep = compare(cleanedText, texts[Number(pageNo) - 1] ?? '');
   const material = rep.findings.filter((x) => x.severity === 'material');
-  rows.push({ f, label, rep, read, material });
+  const located = locateFindings(rep.findings, read.words);
+  const tolerant = located.filter((x) => x.severity === 'tolerant');
+  rows.push({ f, label, rep, read, material, tolerant });
   console.log([
     f, label, rep.similarity.toFixed(3), read.meanConfidence.toFixed(3),
     read.wordCount, material.length, rep.suppressed, rep.status,
@@ -71,5 +74,13 @@ console.log('\n--- criterion 4: known alterations are caught ---');
 for (const r of rows.filter((x) => x.label === 'altered')) {
   console.log(`  ${r.f}: ${r.material.length} material — ${r.material.map((m) => `${m.expected} -> ${m.found}`).join('; ') || 'CAUGHT NOTHING'}`);
 }
+
+console.log('\n--- criterion 5: tolerant-finding confidence, for MIN_TOLERANT_CONFIDENCE ---');
+for (const r of rows) {
+  if (!r.tolerant.length) continue;
+  const confs = r.tolerant.map((t) => (t.region ? t.region.confidence.toFixed(3) : 'none'));
+  console.log(`  ${r.f} (${r.label}): ${confs.join(', ')}`);
+}
+console.log('  pick MIN_TOLERANT_CONFIDENCE from the gap between genuine pages\' low-confidence noise and their legitimately-read differences.');
 
 process.exit(falsePositives.length === 0 ? 0 : 1);
