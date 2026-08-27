@@ -1,7 +1,7 @@
 # Page Image OCR — Comparing Labeled Fields — Design
 
 **Date:** 2026-08-25
-**Status:** Revised after a first implementation failed real-photo verification — see §2a. Pre-implementation of the revision.
+**Status:** Implemented and verified against real photos (2026-08-25). Criterion 1 holds with one accepted, documented exception (§6, dropped-trailing-letter) — every other genuine sample and the known alteration (now caught cleanly, both altered fields, no cross-field scrambling) hold as designed.
 **Extends:** `2026-08-13-page-image-ocr-design.md`, `2026-08-25-tolerant-finding-confidence-filter-design.md`
 
 ## 1. Problem
@@ -213,6 +213,21 @@ for a corporate name or address with no digits in it at all.
   §2a's cross-field-confusion bug specifically is closed, because a record
   field that finds its own labeled photo line no longer needs the
   nearest-unclaimed-token fallback that caused it.
+- **A dropped trailing letter is accepted, not forgiven — deliberately.**
+  Real-photo verification found `1-genuine.jpg` reading `Northern` as
+  `Norther` (the trailing `n` dropped), reported material. No tolerance was
+  added for this, on purpose: the dropped letter sits in the same trailing
+  position a real pluralization removal would (`Corporations` →
+  `Corporation`, `Areas` → `Area`), and there is no textual test that tells
+  a camera-dropped trailing letter apart from a deliberately removed one —
+  the same ambiguity the governing digit rule
+  (`2026-08-13-page-image-ocr-design.md` §5.4) exists to protect against,
+  here for letters instead of digits. Decided 2026-08-25: report it, same
+  as the digit rule reports an unresolvable digit ambiguity, rather than
+  risk masking a real trailing-letter removal to suppress this one noise
+  source. A human reading the finding against the real page resolves it in
+  seconds; silently forgiving it removes that chance for exactly the
+  alteration this feature exists to catch.
 
 ## 7. Testing
 
