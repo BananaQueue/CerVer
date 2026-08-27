@@ -17,13 +17,12 @@ const resultEl = document.getElementById('result');
 // than each rolling its own /health call.
 const health = fetch('/health').then((r) => r.json()).catch(() => ({}));
 
-// The photo-comparison feature is not shipped until Task 8's calibration
-// against real photographs lands (spec §9.2, §10) -- THRESHOLDS and
-// MIN_CONFIDENCE are still provisional guesses, and a real end-to-end run
-// already produced a material false positive on a genuine page. The page
-// cannot read the server's environment, so /health carries the switch; the
-// button, #ocrOut and their listeners simply do not exist in the DOM until
-// this is true, same pattern as CERVER_FRAME_CAPTURE's diagnosticsOn below.
+// The photo-comparison feature shipped on by default 2026-08-25, once spec
+// §9.2's calibration against real photographs held. CERVER_PAGE_IMAGE_OCR=0
+// remains a server-side kill switch; the page cannot read the server's
+// environment, so /health carries that state. The button, #ocrOut and their
+// listeners simply do not exist in the DOM when it's off, same pattern as
+// CERVER_FRAME_CAPTURE's diagnosticsOn below.
 let pageImageOcrOn = false;
 health.then((h) => { pageImageOcrOn = h?.pageImageOcr === true; });
 
@@ -667,10 +666,9 @@ function renderPageResult(data) {
 
   const verified = data.status === 'page_verified';
   // Not just `verified`: the photo-comparison feature stays off the page
-  // entirely until the server says it has been calibrated (see `health` /
+  // entirely if the server's kill switch is set (see `health` /
   // `pageImageOcrOn` above) -- the button must be genuinely absent from the
-  // DOM, not merely disabled or hidden, so it never appears for whoever
-  // happens to load the page before Task 8 lands.
+  // DOM, not merely disabled or hidden, whenever that's the case.
   const offerPhotoCompare = verified && pageImageOcrOn;
   resultEl.hidden = false;
   resultEl.innerHTML = `
