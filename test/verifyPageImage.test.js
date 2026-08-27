@@ -60,6 +60,18 @@ test('a faithful reading of page 1 compares clean', async () => {
   assert.equal(r.k, 1);
 });
 
+// The frontend shows this alongside a finding so a reviewer can weigh "this
+// word read at 38% confidence" against "this photo read at 94% overall" --
+// context the report never surfaced before, even though verifyPageImage
+// always had it (read.meanConfidence).
+test('the report carries the photo\'s overall OCR confidence', async () => {
+  const { db } = await seed();
+  const r = await verifyPageImage(db, Buffer.alloc(1), {
+    iisNo: 'R1-2026-000001', k: 1, ocr: stubOcr(BODY, 0.83),
+  });
+  assert.equal(r.meanConfidence, 0.83);
+});
+
 test('an inflated amount is reported as material', async () => {
   const { db } = await seed();
   const r = await verifyPageImage(db, Buffer.alloc(1), {

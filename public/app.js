@@ -859,38 +859,42 @@ function renderOcrReport(out, rep, file) {
       '<p class="msg">The wording is too different to compare value by value. Open the real page and look.</p>'));
 
   const material = rep.findings.filter((f) => f.severity === 'material');
-  const tolerant = rep.findings.filter((f) => f.severity === 'tolerant');
-  const located = rep.findings.filter((f) => f.region);
+  // Tolerant ("differences put down to the camera") findings are no longer
+  // listed at all -- omitted deliberately (2026-08-27), not just collapsed.
+  // located therefore only ever needs material findings: nothing else has a
+  // row left to point a box at.
+  const located = material.filter((f) => f.region);
 
   const row = (f) => {
     const where = f.line ? `line ${f.line}` : 'not on the record page';
     const said = f.expected === null
       ? `the photo has <b>${esc(f.found)}</b>, the record has no such ${esc(f.cls)}`
       : `record <b>${esc(f.expected)}</b> · photo <b>${esc(f.found ?? 'nothing')}</b>`;
+    // Confidence context, when this finding could be located: lets a
+    // reviewer weigh "this one word read badly" (more likely the camera)
+    // against "this one word read fine on an otherwise clean photo" (more
+    // worth a close look). Never changes severity or wording above it --
+    // this is context for the human, not a second verdict.
+    const conf = f.region ? ` · read at ${Math.round(f.region.confidence * 100)}% confidence` : '';
     const idx = located.indexOf(f);
     const attr = idx !== -1 ? ` data-region-index="${idx}" tabindex="0" style="cursor:pointer"` : '';
-    return `<li${attr}><span class="pill" style="background:var(--slate)">${esc(f.cls)}</span> ${said} <span style="color:var(--muted)">(${esc(where)})</span></li>`;
+    return `<li${attr}><span class="pill" style="background:var(--slate)">${esc(f.cls)}</span> ${said} <span style="color:var(--muted)">(${esc(where)}${conf})</span></li>`;
   };
 
   const head = material.length
-    ? shell('var(--warn)', `${material.length} thing${material.length > 1 ? 's' : ''} worth checking`,
-        `<ul class="more open" style="list-style:none;padding:0;margin-top:0.6rem">${material.map(row).join('')}</ul>
+    // "Appears" rather than an unconditional claim: a material finding can
+    // be a genuine alteration or a camera misread (the governing digit rule
+    // exists precisely because text alone can't always tell them apart) --
+    // this is a deliberately forceful headline, not a certainty claim. The
+    // seal card above is the actual verdict and is untouched by this.
+    ? shell('var(--bad)', 'This document appears to have been altered',
+        `<p class="msg" style="margin-bottom:0.6rem">This photo read at ${Math.round(rep.meanConfidence * 100)}% confidence overall.</p>
+         <ul class="more open" style="list-style:none;padding:0;margin-top:0.6rem">${material.map(row).join('')}</ul>
          <p class="note" style="margin-top:0.6rem">Read these against the real page before drawing a conclusion — a photograph can be misread.</p>`)
     : shell('var(--slate)', 'Nothing found',
         '<p class="msg">Every amount, date and duration on the record was found on the photo. This is not a verification — only the seal verifies.</p>');
 
-  // rep.suppressed already counts every tolerant finding in `tolerant`
-  // (pageCompare.js's compare() increments it once per tolerant finding it
-  // pushes, then adds the unitemized word-noise fudge on top) -- adding
-  // tolerant.length again here double-counted the itemized ones.
-  const rest = rep.suppressed
-    ? `<details class="ocr-note" style="--state:var(--slate)"><summary>${rep.suppressed} difference${rep.suppressed > 1 ? 's' : ''} put down to the camera</summary>
-         <ul style="list-style:none;padding:0;margin-top:0.5rem">${tolerant.map(row).join('')}</ul>
-         <p class="note">Wording differences of this kind are usually how the photo read, not how the page reads.</p>
-       </details>`
-    : '';
-
-  out.innerHTML = head + rest;
+  out.innerHTML = head;
   if (located.length) drawPhotoWithBoxes(out, file, located);
 }
 

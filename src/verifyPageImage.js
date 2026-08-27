@@ -90,5 +90,9 @@ export async function verifyPageImage(
   const report = compare(cleanedText, authText);
   const located = locateFindings(report.findings, read.words);
   const findings = dropLowConfidenceTolerant(located, MIN_TOLERANT_CONFIDENCE);
-  return done({ ...report, findings });
+  // The photo's overall read confidence, for the report to show alongside a
+  // finding -- so a reviewer can weigh "this one word read badly" against
+  // "the whole photo read badly" or "the whole photo read fine". Computed
+  // above for the image_unreadable gate; simply never returned until now.
+  return done({ ...report, findings, meanConfidence: read.meanConfidence });
 }
