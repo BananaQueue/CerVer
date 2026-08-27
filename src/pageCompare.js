@@ -431,7 +431,17 @@ function extractFieldTokens(text, claimed, knownLabels) {
         }
       }
     }
-    if (value === null) {
+    // Only the record side (no knownLabels -- it's the source of labels,
+    // not a consumer of them) falls back to the blind pattern. Real photo,
+    // 2026-08-27 (1-genuine.jpg, "Special Order" fixture set): a misread of
+    // the seal/logo glyphs bleeding into the letterhead line read as
+    // "NE: 5 Republic of the Philippines" -- a genuine photo, zero real
+    // alterations. Falling back to the blind pattern here treated that OCR
+    // noise as a brand-new field the record never had, reporting it
+    // "added." The known-label loop above already tried every real label
+    // and found none on this line; there is nothing left to anchor a photo-
+    // side match to, so the line is left unmatched rather than guessed at.
+    if (value === null && !knownLabels) {
       const m = FIELD_LINE.exec(masked);
       if (m && !m[2].includes(NUL)) {
         value = m[2];

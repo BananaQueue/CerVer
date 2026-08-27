@@ -236,6 +236,17 @@ test('a label word used as an ordinary grammatical subject is not treated as a f
   assert.deepEqual(byClass(t, 'field'), []);
 });
 
+// Real regression, 2026-08-27 (1-genuine.jpg, "Special Order" fixture set):
+// a misread of the seal/logo glyphs bleeding into the letterhead line read
+// as "NE: 5 Republic of the Philippines" -- shaped like a labeled field
+// (word, colon, rest of line), but "NE" was never a real field label. The
+// blind FIELD_LINE fallback used to fire anyway once the known-label loop
+// found nothing on the line, fabricating a field the record never had.
+test('a line shaped like a labeled field but matching no known label is not treated as one', () => {
+  const t = extractTokens('NE: 5 Republic of the Philippines', { fieldLabels: ['SPECIAL ORDER NO.'] });
+  assert.deepEqual(byClass(t, 'field'), []);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [
