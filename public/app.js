@@ -753,12 +753,14 @@ function renderPageResult(data) {
 // Deliberately plain. No stamp, no --ok green, no "verified" — those belong to
 // the seal. A clean result says nothing was found, which is not the same as
 // saying the page is genuine (spec §2).
-// Provisional, like every other confidence-derived threshold in this feature
-// (THRESHOLDS in src/pageCompare.js, MIN_CONFIDENCE in src/verifyPageImage.js)
-// -- awaiting Task 8's calibration against real photographs. Below this, a
-// box is drawn solid and heavier; above it, lighter/dashed. Getting this
-// number wrong costs a box styled slightly off, never a wrong finding --
-// styling is downstream of a finding that already exists (spec 2026-08-17 §2).
+// Unlike THRESHOLDS (src/pageCompare.js), MIN_CONFIDENCE and
+// MIN_TOLERANT_CONFIDENCE (src/verifyPageImage.js) -- all measured from real
+// photographs once Task 8's calibration landed (2026-08-24/25) -- this one
+// was never revisited alongside them, and stays a provisional guess. Lower
+// stakes than those: below this, a box is drawn solid and heavier; above it,
+// lighter/dashed. Getting this number wrong costs a box styled slightly off,
+// never a wrong finding -- styling is downstream of a finding that already
+// exists (spec 2026-08-17 §2).
 const BOX_CONFIDENCE_FLOOR = 0.5;
 
 function cssVar(name) {
