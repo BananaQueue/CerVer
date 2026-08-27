@@ -1,7 +1,7 @@
 # Page Image OCR — A Line-Preserving Record Extraction for Comparison — Design
 
 **Date:** 2026-08-25
-**Status:** Approved design, pre-implementation
+**Status:** Implemented and verified against real photos (2026-08-25) — see the calibration run in Task 4 of the implementation plan.
 **Extends:** `2026-08-13-page-image-ocr-design.md`, `2026-08-24-ocr-footer-position-design.md`
 
 ## 1. Problem
