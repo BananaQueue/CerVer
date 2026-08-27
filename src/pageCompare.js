@@ -15,7 +15,7 @@ import { stripFooter } from './sealCode.js';
 // changed 1 to 4", so we never forgive it.
 const GLYPH_FOLD = new Map([
   ['O', '0'], ['o', '0'], ['Q', '0'], ['D', '0'],
-  ['l', '1'], ['I', '1'], ['|', '1'], ['t', '1'],
+  ['l', '1'], ['I', '1'], ['|', '1'], ['t', '1'], ['i', '1'],
   ['S', '5'], ['B', '8'], ['Z', '2'], ['G', '6'],
 ]);
 
@@ -88,27 +88,30 @@ const MONTH = 'January|February|March|April|May|June|July|August|September|Octob
 // for the same reason, on amounts instead of citations.
 const DIGITISH = '0-9OoQDlI|SBZG';
 
-// reference's own extraction class, DIGITISH plus 't' -- a real 2026-08-24
-// misread ("R1-2026-010734" -> "Rt-2026-010734") not covered by GLYPH_FOLD's
-// other six letters, which are the classic OCR digit lookalikes (O/0, l/1,
-// S/5, B/8, Z/2, G/6). 't' isn't one of those, so it's kept out of the shared
-// DIGITISH used by money and citation -- widening it there was never reviewed
-// for those classes and isn't needed to fix this.
-const REFERENCE_DIGITISH = `${DIGITISH}t`;
+// reference's own extraction class, DIGITISH plus 't' and 'i' -- real
+// misreads (2026-08-24: "R1-2026-010734" -> "Rt-2026-010734"; 2026-08-27:
+// "R1-2026-001024" -> "Ri-2026-001024") not covered by GLYPH_FOLD's other
+// six letters, which are the classic OCR digit lookalikes (O/0, l/1, S/5,
+// B/8, Z/2, G/6). Neither 't' nor 'i' is one of those, so both are kept
+// out of the shared DIGITISH used by money and citation -- widening it
+// there was never reviewed for those classes and isn't needed to fix this.
+const REFERENCE_DIGITISH = `${DIGITISH}ti`;
 
 // The hyphens inside a reference code are structural, not digit content --
 // forgiving what character reads there costs nothing security-wise, since
 // the value the digit rule protects is the digit groups, not the
-// punctuation style between them. A real photo (2026-08-27) misread the
-// first hyphen as a tilde ("R1-2026-001024" -> "Rl~2026-001024"), invisible
-// to extraction the same way the 't' misread was until REFERENCE_DIGITISH
+// punctuation style between them. Two real misreads, both 2026-08-27: a
+// tilde ("R1-2026-001024" -> "Rl~2026-001024") and an equals sign
+// ("R1-2026-001024" -> "Ri=2026-001024", the same photo that also misread
+// the '1' as 'i' -- see REFERENCE_DIGITISH). Either was invisible to
+// extraction the same way the 't' misread was until REFERENCE_DIGITISH
 // covered it. The em/en-dash range is the same one PUNCT_FOLD already
 // treats as a dash elsewhere in this file -- kept as its own constant
 // rather than folded into PUNCT_FOLD, which also feeds the whole-page
 // similarity check and other classes' literal em-dash content (e.g.
 // "Category B — Environmentally Critical Area"); this widening is reviewed
 // for reference only.
-const REFERENCE_SEP = '[-\\u2010-\\u2015\\u2212~]';
+const REFERENCE_SEP = '[-\\u2010-\\u2015\\u2212~=]';
 
 // A citation numeral's digit-lookalike run must contain at least one of these
 // to count as a numeral at all: a real digit, or the pipe OCR produces for a
@@ -331,7 +334,18 @@ function extractMoneyTokens(text, claimed) {
       // through the bare-P glue filter it must never see.
       const isBareP = !/^(?:₱|php)/i.test(m[0]);
       const gluedToNextWord = nextChar !== undefined && nextChar !== NUL && /[A-Za-z]/.test(nextChar);
+      // A bare-P match immediately followed by "/digit" is a page indicator
+      // ("p2/2", "p1/3" -- the footer stamp format used throughout this
+      // project), never a real amount: no printed amount is ever followed
+      // by a slash and another digit. Real case, 2026-08-27: a footer whose
+      // reference token failed to extract left the whole line unstripped
+      // (the content gate that would have removed it requires a reference
+      // AND zero money tokens -- see docs/superpowers/specs), and "p2" from
+      // "p2/2" was read as a phantom bare-P amount as a result. This guard
+      // closes that independently of whether the reference extracts.
+      const isPageIndicator = isBareP && /^\/\d/.test(masked.slice(end, end + 2));
       if (!hasRealDigit(m[0])) continue;
+      if (isPageIndicator) continue;
       if (isBareP && gluedToNextWord && !gluedReadsAsAmount(m[0])) continue;
       claimed[i].push([m.index, end]);
       out.push({ cls: 'money', value: m[0], line: i + 1 });

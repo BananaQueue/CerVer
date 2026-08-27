@@ -101,6 +101,14 @@ test('extractTokens recognizes a control number even when a hyphen reads as a ti
   assert.deepEqual(byClass(t, 'reference'), ['Rl~2026-001024']);
 });
 
+// Real case, 2026-08-27, same footer stamp as the tilde case above but a
+// different photo: "R1" misread as "Ri" (lowercase i for digit 1) AND the
+// first hyphen misread as "=". Both land on REFERENCE_DIGITISH/REFERENCE_SEP.
+test('extractTokens recognizes a control number even when a digit reads as a lowercase i and a hyphen reads as an equals sign', () => {
+  const t = extractTokens('Per Ri=2026-001024 under Section 12.');
+  assert.deepEqual(byClass(t, 'reference'), ['Ri=2026-001024']);
+});
+
 test('extractTokens finds runs of two or more capitalised words as names', () => {
   const t = extractTokens('Issued to ACME MINING CORPORATION by the office.');
   assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORPORATION']);
@@ -318,6 +326,21 @@ test('a tilde-for-hyphen OCR misread in a control number is suppressed, not repo
   const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-001024.');
   const r = compare(auth.replace('R1-2026-001024', 'Rl~2026-001024'), auth);
   assert.deepEqual(materials(r), []);
+});
+
+test('an i-for-1 and equals-for-hyphen OCR misread in a control number is suppressed, not reported', () => {
+  const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-001024.');
+  const r = compare(auth.replace('R1-2026-001024', 'Ri=2026-001024'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Real case, 2026-08-27: a footer's page indicator ("p2/2") was read as a
+// phantom bare-P amount once the whole footer line leaked through
+// unstripped (its reference token had failed to extract). This guard
+// closes it independently of whether the reference extracts correctly.
+test('a page indicator ("p2/2") is never read as a money amount', () => {
+  const t = extractTokens('EMB R1-2026-001024 p2/2 K1 36DK-GKFW');
+  assert.deepEqual(byClass(t, 'money'), []);
 });
 
 const FIELD_AUTH = [
