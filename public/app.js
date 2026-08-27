@@ -791,13 +791,29 @@ function drawPhotoWithBoxes(out, file, located) {
     canvas.className = 'ocr-photo';
     const maxWidth = out.clientWidth || 600;
     const scale = Math.min(1, maxWidth / img.naturalWidth);
-    canvas.width = Math.round(img.naturalWidth * scale);
-    canvas.height = Math.round(img.naturalHeight * scale);
+    const cssWidth = Math.round(img.naturalWidth * scale);
+    const cssHeight = Math.round(img.naturalHeight * scale);
+    // Canvas pixel buffers are sized in raw device pixels, not CSS pixels.
+    // Without accounting for devicePixelRatio, a phone's high-density screen
+    // (DPR 3 on a typical iPhone) stretches this buffer back up past its own
+    // resolution on top of the resolution already lost shrinking a 3000px+
+    // photo down to fit the panel -- both losses compound into visibly
+    // blurry text even though the source photo itself is fine. Box
+    // coordinates below stay in CSS-pixel-equivalent units throughout;
+    // ctx.scale(dpr, dpr) does the one conversion every draw call needs.
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
     const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     const redraw = (emphasizeIndex) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, cssWidth, cssHeight);
+      ctx.drawImage(img, 0, 0, cssWidth, cssHeight);
       located.forEach((f, i) => drawBox(ctx, f, scale, { emphasize: i === emphasizeIndex }));
     };
     redraw(-1);
