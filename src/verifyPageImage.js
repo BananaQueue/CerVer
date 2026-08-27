@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { extractPageTexts } from './pdfTools.js';
+import { extractPageTextsWithLines } from './pdfTools.js';
 import { compare, THRESHOLDS } from './pageCompare.js';
 import { recognize as defaultRecognize } from './ocr.js';
 import { locateFindings } from './ocrRegions.js';
@@ -48,7 +48,7 @@ export async function verifyPageImage(
   let authText;
   try {
     const bytes = await fs.readFile(row.sealed_pdf_path);
-    authText = (await extractPageTexts(bytes))[k - 1];
+    authText = (await extractPageTextsWithLines(bytes))[k - 1];
   } catch {
     // The row points at a file that is gone or unreadable. That is a gap in the
     // record, not evidence about the sheet in someone's hand.
