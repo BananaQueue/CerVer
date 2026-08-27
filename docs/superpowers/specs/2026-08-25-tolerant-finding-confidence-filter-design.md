@@ -1,7 +1,7 @@
 # Page Image OCR — Dropping Low-Confidence Tolerant Findings — Design
 
 **Date:** 2026-08-25
-**Status:** Approved design, pre-implementation
+**Status:** Implemented and verified against real photos (2026-08-25) — MIN_TOLERANT_CONFIDENCE=0.4, measured per §4. See the calibration run in Task 4 of the implementation plan.
 **Extends:** `2026-08-13-page-image-ocr-design.md`, `2026-08-17-ocr-confidence-boxes-design.md`, `2026-08-25-record-line-preserving-extraction-design.md`
 
 ## 1. Problem
