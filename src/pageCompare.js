@@ -96,6 +96,20 @@ const DIGITISH = '0-9OoQDlI|SBZG';
 // for those classes and isn't needed to fix this.
 const REFERENCE_DIGITISH = `${DIGITISH}t`;
 
+// The hyphens inside a reference code are structural, not digit content --
+// forgiving what character reads there costs nothing security-wise, since
+// the value the digit rule protects is the digit groups, not the
+// punctuation style between them. A real photo (2026-08-27) misread the
+// first hyphen as a tilde ("R1-2026-001024" -> "Rl~2026-001024"), invisible
+// to extraction the same way the 't' misread was until REFERENCE_DIGITISH
+// covered it. The em/en-dash range is the same one PUNCT_FOLD already
+// treats as a dash elsewhere in this file -- kept as its own constant
+// rather than folded into PUNCT_FOLD, which also feeds the whole-page
+// similarity check and other classes' literal em-dash content (e.g.
+// "Category B — Environmentally Critical Area"); this widening is reviewed
+// for reference only.
+const REFERENCE_SEP = '[-\\u2010-\\u2015\\u2212~]';
+
 // A citation numeral's digit-lookalike run must contain at least one of these
 // to count as a numeral at all: a real digit, or the pipe OCR produces for a
 // misread vertical stroke (never an ordinary English letter). Without this
@@ -461,7 +475,7 @@ const CITATION_NUMERAL = String.raw`[IVXLC]+|(?=[${DIGITISH}]*[${CITATION_ANCHOR
 const TOKEN_PATTERNS = [
   ['date', new RegExp(String.raw`\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}\s+(?:${MONTH})\s+\d{4}\b|\b(?:${MONTH})\s+\d{1,2},\s*\d{4}\b`, 'gi')],
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
-  ['reference', new RegExp(String.raw`\bR[${REFERENCE_DIGITISH}]-[${REFERENCE_DIGITISH}]{4}-[${REFERENCE_DIGITISH}]{6}\b|\bNo\.\s?[${REFERENCE_DIGITISH}]{2}-[${REFERENCE_DIGITISH}]{3,6}\b`, 'g')],
+  ['reference', new RegExp(String.raw`\bR[${REFERENCE_DIGITISH}]${REFERENCE_SEP}[${REFERENCE_DIGITISH}]{4}${REFERENCE_SEP}[${REFERENCE_DIGITISH}]{6}\b|\bNo\.\s?[${REFERENCE_DIGITISH}]{2}${REFERENCE_SEP}[${REFERENCE_DIGITISH}]{3,6}\b`, 'g')],
   ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:${CITATION_NUMERAL})(?![A-Za-z0-9])`, 'gi')],
   // Real line boundaries (src/pdfTools.js's extractPageTextsWithLines,
   // wired in via src/verifyPageImage.js) are what stop a name run now, not
@@ -568,6 +582,11 @@ function keyFor(cls, value) {
   const foldedCase = foldGlyphs(collapsed).toLowerCase();
   if (cls === 'name' || cls === 'field') return foldLetterNoise(foldedCase);
   const key = foldedCase.replace(/^(?:php|p)\s?/, '₱');
+  // Reference only: fold the same hyphen-lookalikes REFERENCE_SEP already
+  // tolerates at extraction to a canonical '-', so a misread separator
+  // ("Rl~2026-001024") keys identically to the clean record value instead
+  // of comparing as a different reference entirely.
+  if (cls === 'reference') return key.replace(new RegExp(REFERENCE_SEP, 'g'), '-');
   // Money only. reasonFor's digit-count comparison is unaffected: digitsOf
   // drops every non-digit anyway, so materiality is decided on real digits
   // (50,000 -> 5 vs 500,000 -> 6) regardless of what the key does.

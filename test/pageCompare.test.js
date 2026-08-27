@@ -92,6 +92,15 @@ test('extractTokens recognizes a control number even when a digit reads as a loo
   assert.deepEqual(byClass(t, 'reference'), ['Rt-2026-010734']);
 });
 
+// Real case, 2026-08-27: a footer stamp read "R1-2026-001024" as
+// "Rl~2026-001024" -- the first hyphen misread as a tilde. Invisible to
+// extraction the same way the 't' misread was, since the pattern required
+// a literal hyphen at that position.
+test('extractTokens recognizes a control number even when a hyphen reads as a tilde', () => {
+  const t = extractTokens('Per Rl~2026-001024 under Section 12.');
+  assert.deepEqual(byClass(t, 'reference'), ['Rl~2026-001024']);
+});
+
 test('extractTokens finds runs of two or more capitalised words as names', () => {
   const t = extractTokens('Issued to ACME MINING CORPORATION by the office.');
   assert.deepEqual(byClass(t, 'name'), ['ACME MINING CORPORATION']);
@@ -297,6 +306,17 @@ test('letter-for-digit OCR noise using an uppercase-only lookalike (B for 8) is 
 test('letter-for-digit OCR noise in a control number is suppressed, not reported', () => {
   const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-010734.');
   const r = compare(auth.replace('R1-2026-010734', 'Rt-2026-010734'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Real case, 2026-08-27: extraction alone isn't enough -- keyFor's generic
+// path never normalized hyphens, so even once "Rl~2026-001024" is extracted
+// it would still key differently from the clean "R1-2026-001024" record
+// value and report as a mismatch. This is the case a real photo actually
+// produced (footer stamp), not a hypothetical.
+test('a tilde-for-hyphen OCR misread in a control number is suppressed, not reported', () => {
+  const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-001024.');
+  const r = compare(auth.replace('R1-2026-001024', 'Rl~2026-001024'), auth);
   assert.deepEqual(materials(r), []);
 });
 
