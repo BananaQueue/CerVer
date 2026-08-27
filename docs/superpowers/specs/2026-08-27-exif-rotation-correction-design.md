@@ -1,7 +1,7 @@
 # Page Image OCR — Correcting EXIF-Rotated Captures Before OCR — Design
 
 **Date:** 2026-08-27
-**Status:** Approved design, pre-implementation
+**Status:** Scope narrowed after real-photo testing disconfirmed the original hypothesis — see §1a. Approved as a correctness fix in its own right, not as a fix for the garbling that motivated it.
 **Extends:** `2026-08-13-page-image-ocr-design.md`
 
 ## 1. Problem
@@ -40,12 +40,44 @@ raw file bytes straight to Tesseract with no EXIF handling at all:
 const { data } = await w.recognize(Buffer.from(imageBytes), {}, { blocks: true });
 ```
 
-Tesseract's layout analysis sees the physically-sideways pixel data. It is
-reasonably tolerant of modest skew, but a full 90° misorientation confuses
-its line/paragraph segmentation badly, worst in the dense title block —
-exactly what was observed. Every calibration photo so far happened to be
-captured with the phone in its default orientation, so this never surfaced
-until now.
+Tesseract's layout analysis sees the physically-sideways pixel data. The
+hypothesis: a full 90° misorientation confuses its line/paragraph
+segmentation, worst in the dense title block. Every calibration photo so
+far happened to be captured with the phone in its default orientation, so
+this would never have surfaced until now.
+
+## 1a. That hypothesis was tested against real data and did not hold
+
+Before implementing, the fix was verified directly: `sharp(...).rotate()`
+against the real photo correctly swaps its dimensions (`4032×3024` →
+`3024×4032`) and strips the tag, confirming the rotation step itself works.
+But running the *corrected* buffer through the actual OCR pipeline still
+produced the same class of scrambled title block:
+
+```
+blic of the Philippines RCES
+ie F ENVIRONMENT AND NATURAL RESOU
+DEPARTMENT © T BUREAU — REGIONAL OFFICE NO. |
+```
+
+Confidence was, if anything, slightly lower than the uncorrected reading
+(65 vs. 70). Rotation was not the cause of this specific garbling. A
+follow-up hypothesis — glare concentrated at the title block, visible in
+the photo — was also checked directly: a brightness grid across the
+rotated image shows a general left-to-right lighting gradient spanning the
+*entire* page (title-row values 148-183, mid-body values as low as 98),
+not an isolated bright spot at the title. Neither hypothesis explains why
+specifically the dense multi-line title scrambles while the body text
+reads cleanly, and no third hypothesis was pursued — see the Common
+Rationalizations table in `superpowers:systematic-debugging`: guessing a
+third cause after two failed would be exactly the pattern that skill warns
+against.
+
+**Decision:** implement the EXIF-rotation fix anyway, on its own merits —
+processing an image in its intended orientation is correct regardless of
+whether it explains this particular photo's garbling — and accept that
+photo's title-block scrambling as an unexplained, undiagnosed capture-
+quality issue, not a bug this design closes. See §5.
 
 ## 2. What this adds
 
@@ -97,10 +129,11 @@ has followed for every other claim about real capture behavior.
 
 - **The real rotated photo** (`test/fixtures/pages/2-genuine-rotated.jpg`,
   genuine, page 2, EXIF orientation 6) added to the calibration fixture set.
-  `scripts/ocr-calibrate.mjs` re-run against all fixtures, confirming: no
-  material false positive on this page, and the tolerant-finding count on
-  it drops sharply from the un-corrected reading (35) once the title block
-  segments cleanly.
+  `scripts/ocr-calibrate.mjs` re-run against all fixtures, confirming only
+  what's actually true per §1a: no *material* false positive on this page
+  (criterion 1 still holds), and the rotation step runs without error on a
+  real EXIF-tagged capture. Not confirming a drop in tolerant-finding count
+  — §1a already found real testing does not support that expectation.
 - **`recognize()`'s rotation step**, isolated: construct or reuse a small
   JPEG with a non-1 EXIF orientation tag, confirm the bytes `sharp` returns
   decode to the expected (rotated) pixel dimensions, orientation-tag-free.
@@ -111,6 +144,14 @@ has followed for every other claim about real capture behavior.
 
 ## 5. Honest limits
 
+- **Does not fix the garbling that motivated it.** Per §1a, the specific
+  title-block scrambling on `2-genuine-rotated.jpg` remains unexplained
+  after two tested hypotheses (rotation, glare). This design is a
+  correctness improvement (OCR sees images in their intended orientation)
+  that happens to have been discovered via that photo, not a fix for it.
+  If the same scrambling pattern shows up on a future, differently-shot
+  photo, that is new evidence worth a fresh investigation — it should not
+  be assumed solved because this design shipped.
 - **Only covers what EXIF orientation actually records** — the eight
   standard values (normal, three rotations, and their mirrored variants).
   A camera or app that fails to write the tag at all (rare, but possible on
