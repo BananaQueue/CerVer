@@ -347,13 +347,14 @@ const TOKEN_PATTERNS = [
   ['duration', new RegExp(String.raw`\b\d+\s+(?:calendar\s+)?(?:day|days|month|months|year|years|week|weeks)\b`, 'gi')],
   ['reference', new RegExp(String.raw`\bR[${REFERENCE_DIGITISH}]-[${REFERENCE_DIGITISH}]{4}-[${REFERENCE_DIGITISH}]{6}\b|\bNo\.\s?[${REFERENCE_DIGITISH}]{2}-[${REFERENCE_DIGITISH}]{3,6}\b`, 'g')],
   ['citation', new RegExp(String.raw`\b(?:Section|Sec\.|Rule|Article|Art\.)\s+(?:${CITATION_NUMERAL})(?![A-Za-z0-9])`, 'gi')],
-  // Capped at 6 words total (1 + up to 5 more) -- unbounded, this spans
-  // across what were genuinely two separate printed title lines whenever
-  // the record's flattened, line-break-free text puts them adjacent and
-  // both are ALL-CAPS. 6 is the longest genuine single name observed in
-  // this project's real documents ("DEPARTMENT OF ENVIRONMENT AND NATURAL
-  // RESOURCES"); see test/pageCompare.test.js for the real case this fixes.
-  ['name', new RegExp(String.raw`\b[A-Z][A-Z&.'-]+(?:\s+[A-Z][A-Z&.'-]+){1,5}\b`, 'g')],
+  // Real line boundaries (src/pdfTools.js's extractPageTextsWithLines,
+  // wired in via src/verifyPageImage.js) are what stop a name run now, not
+  // a word count. A fixed 6-word cap used to stand in for that boundary and
+  // is removed: keeping it alongside real line info would be actively
+  // wrong, not just redundant -- it would wrongly truncate any genuine
+  // single printed line naming something longer than 6 words. See
+  // docs/superpowers/specs/2026-08-25-record-line-preserving-extraction-design.md.
+  ['name', new RegExp(String.raw`\b[A-Z][A-Z&.'-]+(?:\s+[A-Z][A-Z&.'-]+)+\b`, 'g')],
 ];
 
 // Tokens the record carries that must survive in the photo, each tied to the

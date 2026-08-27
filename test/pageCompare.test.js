@@ -101,22 +101,14 @@ test('extractTokens does not call a single capitalised word a name', () => {
   assert.deepEqual(byClass(extractTokens('The DENR office.'), 'name'), []);
 });
 
-// A record page's text has no line breaks at all (extractPageTexts flattens
-// the whole page into one string) -- unlike a photo's OCR reading, which
-// keeps real ones. Left unbounded, the name pattern greedily spans across
-// what were genuinely two separate printed title lines whenever they're
-// both ALL-CAPS and land adjacent in that flattened text, merging two real
-// names into one token the photo side never produces -- reported live
-// 2026-08-24 as a false "difference" on an untampered page: the record's
-// merged "DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES ENVIRONMENTAL
-// MANAGEMENT BUREAU" against the photo's correctly-separate two names.
-// Capped at 6 words, the longest genuine single name observed in this
-// project's real documents ("DEPARTMENT OF ENVIRONMENT AND NATURAL
-// RESOURCES") -- a heuristic bound from observed data, not a rule from a
-// document standard, and worth revisiting if a longer legitimate single
-// name is ever found to be wrongly split by it.
+// Real case, live-tested 2026-08-24 (the record's flattened, line-break-free
+// text merged two genuinely separate printed title lines into one name
+// token). As of 2026-08-25, src/verifyPageImage.js feeds the record side
+// through extractPageTextsWithLines (src/pdfTools.js), which keeps real
+// line breaks -- so the boundary between these two lines is now a real
+// '\n', not something a word-count cap has to approximate.
 test('extractTokens does not merge two adjacent printed title lines into one name', () => {
-  const t = extractTokens('DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES ENVIRONMENTAL MANAGEMENT BUREAU');
+  const t = extractTokens('DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES\nENVIRONMENTAL MANAGEMENT BUREAU');
   assert.deepEqual(byClass(t, 'name'), [
     'DEPARTMENT OF ENVIRONMENT AND NATURAL RESOURCES',
     'ENVIRONMENTAL MANAGEMENT BUREAU',
