@@ -333,12 +333,22 @@ function extractMoneyTokens(text, claimed) {
 // already shows makes which field it is obvious in context), the same
 // reason money gets its own extraction function instead of a pattern entry.
 //
-// [-_.\s]{0,10} before the colon absorbs a real artifact: every one of 6
-// genuine calibration photos read a fill-in-blank before the colon as a
-// stray character ("Proponent _: Northern Luzon..."). The record's own PDF
-// text never needs this, but applying it to both sides is simpler and no
-// less safe than special-casing one.
-const FIELD_LINE = /^\s*[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\s*[-_.\s]{0,10}:\s*(.+?)\s*$/;
+// This is the RECORD-side shape only now (real PDF text, never garbled).
+// Both groups are captured: label (1) feeds compare()'s field-label
+// collection, value (2) becomes the token. A first version tried this same
+// blind pattern on both sides and failed real-photo verification -- the
+// colon itself turned out not to be a reliable anchor at all (dropped
+// entirely, or misread as "+", on real genuine photos), not just noisy
+// around its edges. See §2a of the design doc for the four real shapes
+// that sank that version.
+const FIELD_LINE = /^\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2})\s*[-_.\s]{0,10}:\s*(.+?)\s*$/;
+
+// Whatever survives between a known label and its value on a real photo,
+// once the colon itself can no longer be trusted to be there: a genuine
+// colon, a misread substitute, or nothing but whitespace where one used to
+// be. The em-dash/en-dash range is the same one PUNCT_FOLD already treats
+// as a dash elsewhere in this file.
+const FIELD_SEP = new RegExp('^[\\s:;+_.\\-\\u2010-\\u2015\\u2212]*');
 
 // Runs after every other class, including 'name' inside the TOKEN_PATTERNS
 // loop below -- see extractTokens, which calls this last. If a value is an
@@ -348,21 +358,88 @@ const FIELD_LINE = /^\s*[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\s*[-_.\s]{0,10}
 // value as the name token it already became. A shape this can't cleanly
 // use is invisible to it, not an error -- same fail-safe posture as every
 // other extraction function in this file.
-function extractFieldTokens(text, claimed) {
+//
+// knownLabels, when supplied, is the record's own set of field labels
+// (compare() collects these from the record side and passes them in for
+// the photo side only) -- see the design doc §3. A label match anchors on
+// the label itself, not on whatever punctuation follows it, which is what
+// makes this immune to the colon being dropped or misread. Without
+// knownLabels (record side, or any caller working on a single string in
+// isolation), only the blind FIELD_LINE shape is available.
+function extractFieldTokens(text, claimed, knownLabels) {
   const rawLines = String(text ?? '').split('\n');
   const out = [];
   rawLines.forEach((raw, i) => {
     const line = stripFooter(raw);
     const masked = maskClaimed(line, claimed[i]);
-    const m = FIELD_LINE.exec(masked);
-    if (!m) return;
-    const value = m[1];
-    if (value.includes(NUL)) return;
-    const start = masked.indexOf(value, m.index);
+    let value = null;
+    let start = -1;
+    let label = null;
+    if (knownLabels) {
+      // Searches the whole line, not just its start: a real photo (1-altered.jpg,
+      // 2026-08-25) read stray marks before the label itself ('"i Proponent
+      // —_: ...'), which an anchored startsWith would never tolerate. Word
+      // boundary required after -- 'Project' must not match inside
+      // 'Projections' -- and nothing that reads as a real word (2+ letters)
+      // allowed before: a genuine label line's only pre-label noise is a
+      // stray misread mark (a lone letter, punctuation), never a real word.
+      // Found immediately after the whole-line search was added: without
+      // this, 'The Proponent shall implement...' (ordinary prose, not a
+      // field line) matched 'Proponent' too, fabricating a phantom field
+      // from the rest of that sentence.
+      for (const candidateLabel of knownLabels) {
+        const idx = masked.indexOf(candidateLabel);
+        if (idx === -1) continue;
+        if (/[a-zA-Z]{2,}/.test(masked.slice(0, idx))) continue;
+        const after = masked[idx + candidateLabel.length];
+        if (after !== undefined && /[a-zA-Z]/.test(after)) continue;
+        const rest = masked.slice(idx + candidateLabel.length).replace(FIELD_SEP, '');
+        const candidate = rest.replace(/\s+$/, '');
+        if (candidate && !candidate.includes(NUL)) {
+          value = candidate;
+          label = candidateLabel;
+          start = masked.indexOf(candidate, idx + candidateLabel.length);
+          break;
+        }
+      }
+    }
+    if (value === null) {
+      const m = FIELD_LINE.exec(masked);
+      if (m && !m[2].includes(NUL)) {
+        value = m[2];
+        label = m[1];
+        start = masked.indexOf(value, m.index);
+      }
+    }
+    if (value === null) return;
     claimed[i].push([start, start + value.length]);
-    out.push({ cls: 'field', value, line: i + 1 });
+    // label is carried on the token (not shown in any finding, which still
+    // only reports cls/value/line/expected/found -- see the design doc §3)
+    // purely so compare()'s nearest-unclaimed-token fallback can restrict a
+    // 'field' match to the SAME label. Every other STRICT class is
+    // self-describing by shape (a date looks like a date); 'field' is the
+    // one class where several genuinely different values share one class
+    // name, so the fallback needs this extra identity to avoid pairing a
+    // record's Proponent value against a photo's Classification value just
+    // because they happen to be the nearest two unclaimed field tokens by
+    // line -- found 2026-08-25 on a real photo with two real alterations at
+    // once (see design doc §2a).
+    out.push({ cls: 'field', value, line: i + 1, label });
   });
   return out;
+}
+
+// The record's own set of field labels -- always clean, real PDF text.
+// Collected once per compare() call and handed to the photo-side
+// extraction (see extractTokens's opts.fieldLabels), so it can anchor on a
+// known label instead of the punctuation after it.
+function collectFieldLabels(text) {
+  const labels = new Set();
+  for (const raw of String(text ?? '').split('\n')) {
+    const m = FIELD_LINE.exec(stripFooter(raw));
+    if (m) labels.add(m[1]);
+  }
+  return labels;
 }
 
 // Order matters: the first pattern to claim a span wins, so the more specific
@@ -400,7 +477,7 @@ const TOKEN_PATTERNS = [
 // line it sits on so a finding can point somewhere on the sheet. Also the
 // entry point the photo side uses (see compare(), below) -- money, and every
 // other class, is extracted identically for both.
-export function extractTokens(text) {
+export function extractTokens(text, opts = {}) {
   // stripFooter canonicalizes whitespace, which would destroy line structure —
   // so split first and strip the footer per line, keeping line numbers intact.
   const rawLines = String(text ?? '').split('\n');
@@ -439,7 +516,7 @@ export function extractTokens(text) {
 
   // Last of all -- a labeled field's value is whatever's left on its line
   // once every more specific class has already claimed its own span.
-  out.push(...extractFieldTokens(text, claimed));
+  out.push(...extractFieldTokens(text, claimed, opts.fieldLabels));
 
   return out.sort((a, b) => a.line - b.line);
 }
@@ -576,7 +653,11 @@ export function compare(ocrText, authText) {
   // sides disagree about what counts as an amount; there is nothing left here
   // to keep in sync.
   const authTokens = extractTokens(authText);
-  const ocrTokens = extractTokens(ocrText);
+  // The record's own field labels are always clean (real PDF text) -- handed
+  // to the photo side so it can anchor a labeled field on the label itself,
+  // not on whatever the colon after it degraded into. See
+  // docs/superpowers/specs/2026-08-25-labeled-field-comparison-design.md §3.
+  const ocrTokens = extractTokens(ocrText, { fieldLabels: collectFieldLabels(authText) });
   const ocrByKey = indexByKey(ocrTokens);
   const authByKey = indexByKey(authTokens);
 
@@ -609,6 +690,14 @@ export function compare(ocrText, authText) {
       if (o.cls !== t.cls) continue;
       if (consumedNear.has(o)) continue;
       if (authByKey.has(keyFor(o.cls, o.value))) continue;
+      // 'field' is the one class where several genuinely different values
+      // share one class name (every other STRICT class is self-describing
+      // by shape) -- without this, two real alterations on the same photo
+      // could pair a record's Proponent value against a photo's
+      // Classification value just because they're the nearest two
+      // unclaimed field tokens by line. See extractFieldTokens's comment
+      // on why label is carried on the token.
+      if (t.cls === 'field' && o.label !== t.label) continue;
       const dist = Math.abs(o.line - t.line);
       if (dist < bestDist) {
         bestDist = dist;

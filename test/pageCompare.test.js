@@ -167,6 +167,58 @@ test('a labeled field whose value is an ALL-CAPS run defers to the name pattern,
   assert.deepEqual(byClass(t, 'field'), []);
 });
 
+// Real photo shapes, found 2026-08-25 across all 6 genuine calibration
+// photos (test/fixtures/pages/1-genuine*.jpg): the colon itself is not a
+// reliable anchor at all on this document's label lines. A first attempt
+// that only widened the pre-colon character class failed real-photo
+// verification -- these four are why. Anchoring on a known label instead
+// (compare()'s record-driven extraction, opts.fieldLabels) fixes all four.
+test('a labeled field is found even when the photo drops the colon entirely', () => {
+  const t = extractTokens('Location Barangay Poblacion, San Fernando City, La Union', { fieldLabels: ['Location'] });
+  assert.deepEqual(byClass(t, 'field'), ['Barangay Poblacion, San Fernando City, La Union']);
+});
+
+test('a labeled field is found even when the photo misreads the colon as "+"', () => {
+  const t = extractTokens('Capacity + 120,000 metric tons per annum', { fieldLabels: ['Capacity'] });
+  assert.deepEqual(byClass(t, 'field'), ['120,000 metric tons per annum']);
+});
+
+test('a labeled field is found past an em-dash-and-space before the colon', () => {
+  const t = extractTokens('Proponent — : Northern Luzon Aggregates Corporation', { fieldLabels: ['Proponent'] });
+  assert.deepEqual(byClass(t, 'field'), ['Northern Luzon Aggregates Corporation']);
+});
+
+test('a labeled field is found past an em-dash-then-underscore before the colon', () => {
+  const t = extractTokens('Proponent —_: Northern Luzon Aggregates Corporation', { fieldLabels: ['Proponent'] });
+  assert.deepEqual(byClass(t, 'field'), ['Northern Luzon Aggregates Corporation']);
+});
+
+test('a known field label must match as a whole word, not a prefix of a longer word', () => {
+  const t = extractTokens('Projections are due Friday.', { fieldLabels: ['Project'] });
+  assert.deepEqual(byClass(t, 'field'), []);
+});
+
+// Real case, 1-altered.jpg, 2026-08-25: OCR read stray marks before the
+// label itself, not just between label and colon -- a startsWith-anchored
+// search would never find this. The label can be found anywhere on the
+// line, as long as both sides land on a word boundary.
+test('a labeled field is found past stray marks before the label itself', () => {
+  const t = extractTokens('"i Proponent —_: Northern Luzon Aggregates Corporation', { fieldLabels: ['Proponent'] });
+  assert.deepEqual(byClass(t, 'field'), ['Northern Luzon Aggregates Corporation']);
+});
+
+// Real regression, found immediately after the fix above: a genuine label
+// word also appears in this project's real documents as an ordinary
+// grammatical subject ("The Proponent shall implement..."). Widening the
+// label search to the whole line (needed for the case just above) briefly
+// treated this sentence as a field line too, fabricating a phantom field
+// from the rest of it. A real word (2+ letters) before the label match
+// rules this out; a lone stray character does not.
+test('a label word used as an ordinary grammatical subject is not treated as a field line', () => {
+  const t = extractTokens('The Proponent shall implement the Environmental Management Plan submitted', { fieldLabels: ['Proponent'] });
+  assert.deepEqual(byClass(t, 'field'), []);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [
@@ -289,6 +341,27 @@ test('a pluralized field value (Area -> Areas) is material', () => {
   assert.ok(f, 'expected a field finding');
   assert.equal(f.expected, 'Category B — Environmentally Critical Area');
   assert.equal(f.found, 'Category B — Environmentally Critical Areas');
+});
+
+// Real case, live-tested 2026-08-25: a real photo carried two genuine
+// alterations at once (Proponent and Classification both pluralized).
+// compare()'s nearest-unclaimed-token fallback pairs a record field with
+// the nearest unclaimed photo field BY LINE when an exact key match fails
+// -- which both of these legitimately do, being altered. Without label
+// tracking, the fallback paired Proponent's record value against
+// Classification's photo value (and vice versa), reporting a scrambled,
+// nonsensical mismatch instead of two clean, separate findings.
+test('two field values altered on the same photo each pair with their own label, not each other', () => {
+  const altered = FIELD_AUTH.replace('Corporation', 'Corporations').replace('Critical Area', 'Critical Areas');
+  const r = compare(altered, FIELD_AUTH);
+  const findings = materials(r).filter((x) => x.cls === 'field');
+  assert.equal(findings.length, 2);
+  const proponent = findings.find((f) => f.expected === 'Northern Luzon Aggregates Corporation');
+  const classification = findings.find((f) => f.expected === 'Category B — Environmentally Critical Area');
+  assert.ok(proponent, 'expected a Proponent finding');
+  assert.ok(classification, 'expected a Classification finding');
+  assert.equal(proponent.found, 'Northern Luzon Aggregates Corporations');
+  assert.equal(classification.found, 'Category B — Environmentally Critical Areas');
 });
 
 // Real case, live-tested 2026-08-24: the record's flattened, line-break-free
