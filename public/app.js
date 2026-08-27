@@ -865,8 +865,12 @@ function renderOcrReport(out, rep, file) {
     : shell('var(--slate)', 'Nothing found',
         '<p class="msg">Every amount, date and duration on the record was found on the photo. This is not a verification — only the seal verifies.</p>');
 
-  const rest = (tolerant.length || rep.suppressed)
-    ? `<details class="ocr-note" style="--state:var(--slate)"><summary>${tolerant.length + rep.suppressed} difference${tolerant.length + rep.suppressed > 1 ? 's' : ''} put down to the camera</summary>
+  // rep.suppressed already counts every tolerant finding in `tolerant`
+  // (pageCompare.js's compare() increments it once per tolerant finding it
+  // pushes, then adds the unitemized word-noise fudge on top) -- adding
+  // tolerant.length again here double-counted the itemized ones.
+  const rest = rep.suppressed
+    ? `<details class="ocr-note" style="--state:var(--slate)"><summary>${rep.suppressed} difference${rep.suppressed > 1 ? 's' : ''} put down to the camera</summary>
          <ul style="list-style:none;padding:0;margin-top:0.5rem">${tolerant.map(row).join('')}</ul>
          <p class="note">Wording differences of this kind are usually how the photo read, not how the page reads.</p>
        </details>`
