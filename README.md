@@ -139,18 +139,18 @@ the office's `iis.emb.gov.ph` page. CerVer covers the part that QR cannot:
 - **Full check** — upload the PDF → a page-by-page report that names exactly which
   pages were altered / inserted / removed / reordered (exact re-hash; no OCR).
 
-**Photo of a page (off by default, pending calibration).** After a seal
-verifies, `CERVER_PAGE_IMAGE_OCR=1` also offers "Attach a photo of this page",
-checking every amount, date and duration on the record against what the
-camera read. This is **evidence, not proof**: OCR is lossy, so a clean result
-reads "nothing found", never "verified" — it narrows the honest limit below
-without removing it. Spec §9.2 makes shipping it conditional on measuring the
-comparison against real photographs first (not renders of the PDF), which has
-not been done yet; until then the button does not exist on the page, same
-gating as `CERVER_FRAME_CAPTURE` above.
+**Photo of a page (on by default since 2026-08-25).** After a seal verifies,
+"Attach a photo of this page" checks every amount, date, duration, reference,
+and citation on the record against what the camera read. This is **evidence,
+not proof**: OCR is lossy, so a clean result reads "nothing found", never
+"verified" — it narrows the honest limit below without removing it. Spec
+§9.2's shipping criteria (zero material false positives across real
+photographs, not renders) are measured and hold — see the spec's final
+calibration record. `CERVER_PAGE_IMAGE_OCR=0` is a kill switch if the feature
+ever needs to be pulled without a code change:
 
 ```bash
-CERVER_PAGE_IMAGE_OCR=1 npm start
+CERVER_PAGE_IMAGE_OCR=0 npm start
 ```
 
 Honest limit, and the reason the comparison view exists: **a valid seal read off

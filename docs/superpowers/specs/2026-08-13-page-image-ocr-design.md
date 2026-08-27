@@ -1,7 +1,7 @@
 # Page Image OCR — Comparing a Photographed Page Against the Record — Design
 
 **Date:** 2026-08-13
-**Status:** Approved design, pre-implementation
+**Status:** Implemented, calibrated against real photographs, and shipped on by default (2026-08-25) — see §9.2 for the final calibration record.
 **Extends:** `2026-07-23-per-page-sealing-design.md`
 
 ## 1. Problem
@@ -329,41 +329,61 @@ measured:
 Until (1) holds on real photographs, the feature is not shipped, regardless of
 how the synthetic tests read.
 
-**Measured 2026-08-24**, iPhone camera, ordinary office lighting, against
-`scripts/print-test-sealed.pdf` (`R1-2026-010734`). 5 photographs: 2 genuine,
-1 deliberately altered (control number `R1-2026-010734` → `R1-2026-010784`),
-1 attempted-poor, 1 page of an unrelated document (`R1-2025-025065`).
+**Measured 2026-08-24, first round**, iPhone camera, ordinary office
+lighting, against `scripts/print-test-sealed.pdf` (`R1-2026-010734`). 5
+photographs: 2 genuine, 1 deliberately altered (control number
+`R1-2026-010734` → `R1-2026-010784`), 1 attempted-poor, 1 page of an
+unrelated document (`R1-2025-025065`). This first round found a real,
+material false positive (a garbled footer misread bleeding a second
+reference reading into the body text) and left criterion 3 unmeasured —
+see the history below for how each was resolved.
 
-1. **Holds**, on the 2 genuine pages measured: zero material findings on
-   either. Not yet at the plan's full 5-genuine minimum — see the caveat
-   below.
+**Measured 2026-08-25, final round, all criteria hold.** 16 photographs: 10
+genuine (across all 3 pages), 3 poor, 2 altered, 1 of an unrelated document.
+
+1. **Holds.** 10 genuine pages, zero material findings on any of them —
+   at the plan's full 5-genuine minimum and beyond. Getting here required
+   fixing four real bugs the expanded photo set surfaced, each root-caused
+   and fixed rather than threshold-tuned around: a garbled footer stamp
+   leaking a second, misread reference reading into comparison (fixed by
+   locating the footer by page position, not exact text shape); the
+   record's line-break-free text merging two separate printed title lines
+   into one (fixed, then later made structurally unnecessary once the
+   record extraction started preserving real PDF line breaks); a title
+   wrapping differently on the printed page than in the flattened record
+   text (fixed via prefix tolerance, kept as a backstop even after the
+   line-preserving extraction); and a digit-as-letter OCR misread in a
+   control number (`R1` read as `Rt`) invisible to the strict `reference`
+   pattern entirely, fixed by extending it the same glyph-tolerant
+   extraction `money` and `citation` already had.
 2. **Set: `samePageMin = 0.4`** (`src/pageCompare.js`). Genuine similarity
    floor `0.739`, other-page ceiling `0.000` — a wide gap, margin on both
-   sides.
-3. **Not established from real data.** Every attempted `poor` capture (one
-   angled, one angled with reduced framing) read at confidence `0.750`–
-   `0.760` — *above* the lowest genuine reading (`0.720`), not below it,
-   because the capture phone's Deep Fusion pipeline (on by default on
-   current iPhones, no setting to disable it) corrected the deliberately
-   degraded photos back to something legible. `MIN_CONFIDENCE = 0.55`
-   (`src/verifyPageImage.js`) is set conservatively below the lowest genuine
-   reading actually measured, not from a real poor/genuine gap. This needs
-   revisiting once a capture exists that Deep Fusion cannot rescue —
-   real motion blur or a dim handheld shot, not steeper angle alone, which
-   was tried twice and both times came back legible.
-4. **Caught.** The deliberate control-number change was flagged material
-   with the correct before/after values. One additional, unrelated material
-   finding appeared alongside it on the same photo — the control number read
-   a second time (likely once from the body text, once from the footer) and
-   misread on that second pass; a known, pre-existing noise source (see
-   `docs/superpowers/plans/2026-08-13-page-image-ocr.md`'s Task 5 notes on
-   footer-stripping under OCR noise), not something this alteration
-   introduced.
+   sides. Unchanged since the first round; the wider sample did not move it.
+3. **Set: `MIN_CONFIDENCE = 0.65`** (`src/verifyPageImage.js`), from a real
+   measured gap. Most `poor` attempts (angle, reduced framing) still read at
+   `0.740`–`0.760` — above the lowest genuine reading — because the capture
+   phone's Deep Fusion pipeline (on by default, no setting to disable it)
+   corrects deliberately degraded photos back to something legible; that
+   limitation is accepted, not solvable by confidence alone. Two captures
+   using real motion blur / dim handheld shake did get past it, reading
+   `0.470` and `0.550` — both clearly below the genuine floor (`0.720`)
+   measured across all 10 genuine samples. `0.65` sits with margin on both
+   sides of that real gap.
+4. **Caught, cleanly.** Both altered photographs flag exactly the
+   deliberate change (the control-number digit swap) with the correct
+   before/after values and nothing else — the unrelated footer-misread
+   finding that muddied this criterion in the first round is gone, fixed
+   at its source rather than masked.
 
-**Caveat on this round.** Only one `poor` and one `other` sample exist, and
-`genuine` is at 2 of the plan's 5. The `samePageMin` gap is wide enough that
-more genuine samples are unlikely to close it, but the floor and ceiling
-above should be treated as a first measurement, not a final one.
+**Since criterion 1**, a further, separate improvement: a new
+confidence-weighted filter (`src/ocrNoiseFilter.js`, 2026-08-25) drops a
+tolerant (`name`-class, never material) finding from the itemized list when
+the underlying photo text was read with too little confidence to be worth
+explaining — `MIN_TOLERANT_CONFIDENCE = 0.4`, measured the same way, from a
+real gap between genuine pages' near-zero-confidence noise and their
+legitimately-read differences. This does not change any shipping criterion
+above; it only reduces how much unexplained tolerant noise a genuine page's
+report shows.
 
 ## 10. Honest limits
 
@@ -382,9 +402,10 @@ above should be treated as a first measurement, not a final one.
   is. It is reported below the material findings and worded as such.
 - **The committed language data** is a real repository cost, paid so that
   verification does not depend on the internet.
-- **Thresholds ship provisional.** §9.2 cannot be satisfied until real
-  photographs exist, so the constants land uncalibrated and clearly named as
-  such. The feature is not announced to staff until they are measured.
+- **Thresholds are measured, not provisional (2026-08-25).** §9.2's
+  criteria are satisfied against real photographs; every constant this
+  section once described as an uncalibrated placeholder now carries the
+  real measurement it came from, in the constant's own comment.
 
 ## 11. Out of scope
 
