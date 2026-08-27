@@ -4,6 +4,7 @@ import { compare, THRESHOLDS } from './pageCompare.js';
 import { recognize as defaultRecognize } from './ocr.js';
 import { locateFindings } from './ocrRegions.js';
 import { stripOcrFooter } from './ocrFooter.js';
+import { dropLowConfidenceTolerant } from './ocrNoiseFilter.js';
 
 // Compare a photograph of a printed page against the page as it was sealed.
 //
@@ -25,6 +26,15 @@ import { stripOcrFooter } from './ocrFooter.js';
 // across 10 genuine samples (0.720). This sits with margin on both sides of
 // that real gap, not a guess above the genuine floor.
 const MIN_CONFIDENCE = 0.65;
+
+// MEASURED (2026-08-25, real genuine-page data via scripts/ocr-calibrate.mjs's
+// criterion 5). Genuine pages' tolerant (name-class) findings clustered at
+// two extremes: near-zero confidence (0.000 -- a fully garbled word) or
+// 0.820-0.960 (a legitimately read, merely non-material difference). No
+// real genuine-page data point fell between them. This sits in that gap,
+// with margin on both sides -- the same measured-not-guessed practice as
+// MIN_CONFIDENCE and THRESHOLDS.samePageMin.
+const MIN_TOLERANT_CONFIDENCE = 0.4;
 
 export async function verifyPageImage(
   db,
@@ -78,6 +88,7 @@ export async function verifyPageImage(
 
   const cleanedText = stripOcrFooter(read.text, read.words);
   const report = compare(cleanedText, authText);
-  const findings = locateFindings(report.findings, read.words);
+  const located = locateFindings(report.findings, read.words);
+  const findings = dropLowConfidenceTolerant(located, MIN_TOLERANT_CONFIDENCE);
   return done({ ...report, findings });
 }
