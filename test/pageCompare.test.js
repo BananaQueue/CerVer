@@ -146,6 +146,27 @@ test('no strict-class token is lost to an adjacent match', () => {
   assert.deepEqual(byClass(t, 'date'), ['2026-01-15']);
 });
 
+test('extractTokens finds a labeled field value', () => {
+  const t = extractTokens('Proponent : Northern Luzon Aggregates Corporation');
+  assert.deepEqual(byClass(t, 'field'), ['Northern Luzon Aggregates Corporation']);
+});
+
+// Real case, 2026-08-25: every one of 6 genuine calibration photos
+// (test/fixtures/pages/1-genuine*.jpg) read this field with a stray
+// character before the colon -- Tesseract misreading the form's printed
+// fill-in blank. The record's own PDF text never has this; extraction
+// still has to tolerate it, since it's the photo side that matters.
+test('extractTokens finds a labeled field value past a misread fill-in blank before the colon', () => {
+  const t = extractTokens('Proponent _: Northern Luzon Aggregates Corporation');
+  assert.deepEqual(byClass(t, 'field'), ['Northern Luzon Aggregates Corporation']);
+});
+
+test('a labeled field whose value is an ALL-CAPS run defers to the name pattern, not a corrupted field token', () => {
+  const t = extractTokens('Proponent : NORTHERN LUZON AGGREGATES CORPORATION');
+  assert.deepEqual(byClass(t, 'name'), ['NORTHERN LUZON AGGREGATES CORPORATION']);
+  assert.deepEqual(byClass(t, 'field'), []);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [
@@ -225,6 +246,49 @@ test('letter-for-digit OCR noise in a control number is suppressed, not reported
   const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-010734.');
   const r = compare(auth.replace('R1-2026-010734', 'Rt-2026-010734'), auth);
   assert.deepEqual(materials(r), []);
+});
+
+const FIELD_AUTH = [
+  'ENVIRONMENTAL COMPLIANCE CERTIFICATE',
+  'Proponent : Northern Luzon Aggregates Corporation',
+  'Location : Barangay Poblacion, San Fernando City, La Union',
+  'Classification : Category B — Environmentally Critical Area',
+  'The Proponent shall implement the Environmental Management Plan submitted',
+  'as part of the Initial Environmental Examination, and shall comply.',
+].join('\n');
+
+// Real genuine-page noise, found 2026-08-25 across the 6 committed 1-genuine*
+// calibration photos (2 of 6 read this way). B->8 is already in GLYPH_FOLD;
+// this proves it now actually reaches a field-class comparison (Task 1).
+test('a field value differing only by a classic uppercase-glyph confusion (B for 8) is not reported at all', () => {
+  const r = compare(FIELD_AUTH.replace('Category B', 'Category 8'), FIELD_AUTH);
+  assert.deepEqual(r.findings, []);
+});
+
+// Real genuine-page noise, same source (1 of 6). rn->m is already one of
+// foldLetterNoise's folds.
+test('a field value differing only by a classic letter-run confusion (rn for m) is not reported at all', () => {
+  const r = compare(FIELD_AUTH.replace('San Fernando', 'San Femando'), FIELD_AUTH);
+  assert.deepEqual(r.findings, []);
+});
+
+// The real case this feature exists for: live-tested 2026-08-25, a genuine
+// alteration in ordinary sentence-case text no other token class covers.
+test('a pluralized field value (Corporation -> Corporations) is material', () => {
+  const r = compare(FIELD_AUTH.replace('Corporation', 'Corporations'), FIELD_AUTH);
+  const f = materials(r).find((x) => x.cls === 'field');
+  assert.ok(f, 'expected a field finding');
+  assert.equal(f.reason, 'text');
+  assert.equal(f.expected, 'Northern Luzon Aggregates Corporation');
+  assert.equal(f.found, 'Northern Luzon Aggregates Corporations');
+});
+
+test('a pluralized field value (Area -> Areas) is material', () => {
+  const r = compare(FIELD_AUTH.replace('Critical Area', 'Critical Areas'), FIELD_AUTH);
+  const f = materials(r).find((x) => x.cls === 'field');
+  assert.ok(f, 'expected a field finding');
+  assert.equal(f.expected, 'Category B — Environmentally Critical Area');
+  assert.equal(f.found, 'Category B — Environmentally Critical Areas');
 });
 
 // Real case, live-tested 2026-08-24: the record's flattened, line-break-free

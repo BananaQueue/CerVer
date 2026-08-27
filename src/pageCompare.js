@@ -326,6 +326,45 @@ function extractMoneyTokens(text, claimed) {
   return out;
 }
 
+// A "Label : Value" line -- see docs/superpowers/specs/
+// 2026-08-25-labeled-field-comparison-design.md. Not a TOKEN_PATTERNS entry:
+// each match's identity comes from what it captures (a single fixed 'field'
+// class, not one class per label -- the record/photo value pair a finding
+// already shows makes which field it is obvious in context), the same
+// reason money gets its own extraction function instead of a pattern entry.
+//
+// [-_.\s]{0,10} before the colon absorbs a real artifact: every one of 6
+// genuine calibration photos read a fill-in-blank before the colon as a
+// stray character ("Proponent _: Northern Luzon..."). The record's own PDF
+// text never needs this, but applying it to both sides is simpler and no
+// less safe than special-casing one.
+const FIELD_LINE = /^\s*[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}\s*[-_.\s]{0,10}:\s*(.+?)\s*$/;
+
+// Runs after every other class, including 'name' inside the TOKEN_PATTERNS
+// loop below -- see extractTokens, which calls this last. If a value is an
+// ALL-CAPS run 'name' already claimed (a company name, say), the matched
+// span is NUL-masked by the time this sees it; rather than emit a token
+// built from masked characters, this bails on the whole line and leaves the
+// value as the name token it already became. A shape this can't cleanly
+// use is invisible to it, not an error -- same fail-safe posture as every
+// other extraction function in this file.
+function extractFieldTokens(text, claimed) {
+  const rawLines = String(text ?? '').split('\n');
+  const out = [];
+  rawLines.forEach((raw, i) => {
+    const line = stripFooter(raw);
+    const masked = maskClaimed(line, claimed[i]);
+    const m = FIELD_LINE.exec(masked);
+    if (!m) return;
+    const value = m[1];
+    if (value.includes(NUL)) return;
+    const start = masked.indexOf(value, m.index);
+    claimed[i].push([start, start + value.length]);
+    out.push({ cls: 'field', value, line: i + 1 });
+  });
+  return out;
+}
+
 // Order matters: the first pattern to claim a span wins, so the more specific
 // classes are listed before the looser ones. `name` is last because a run of
 // capitals would otherwise swallow "Section 12" style citations. Money is not
@@ -397,6 +436,11 @@ export function extractTokens(text) {
       }
     });
   }
+
+  // Last of all -- a labeled field's value is whatever's left on its line
+  // once every more specific class has already claimed its own span.
+  out.push(...extractFieldTokens(text, claimed));
+
   return out.sort((a, b) => a.line - b.line);
 }
 
@@ -413,7 +457,7 @@ export const THRESHOLDS = {
   // recalibrated this round; no criterion in Task 8 measured it directly
 };
 
-const STRICT = new Set(['money', 'date', 'duration', 'reference', 'citation']);
+const STRICT = new Set(['money', 'date', 'duration', 'reference', 'citation', 'field']);
 
 // Citations no longer need a special-cased Roman-numeral fold: GLYPH_FOLD
 // already maps I, l and | to '1', so folding before lowercasing (below)
