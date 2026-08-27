@@ -18,6 +18,13 @@ import { compare } from '../src/pageCompare.js';
 import { extractPageTextsWithLines } from '../src/pdfTools.js';
 import { stripOcrFooter } from '../src/ocrFooter.js';
 import { locateFindings } from '../src/ocrRegions.js';
+import { dropLowConfidenceTolerant } from '../src/ocrNoiseFilter.js';
+
+// Mirrors src/verifyPageImage.js's MIN_TOLERANT_CONFIDENCE. Kept as a literal
+// here rather than exported and imported -- MIN_CONFIDENCE above is never
+// imported either, so this script always shows what the real pipeline does
+// without needing to export an otherwise-internal constant.
+const MIN_TOLERANT_CONFIDENCE = 0.4;
 
 const [pdfPath, dir] = process.argv.slice(2);
 if (!pdfPath || !dir) {
@@ -41,7 +48,9 @@ for (const f of files) {
   const material = rep.findings.filter((x) => x.severity === 'material');
   const located = locateFindings(rep.findings, read.words);
   const tolerant = located.filter((x) => x.severity === 'tolerant');
-  rows.push({ f, label, rep, read, material, tolerant });
+  const filteredTolerant = dropLowConfidenceTolerant(located, MIN_TOLERANT_CONFIDENCE)
+    .filter((x) => x.severity === 'tolerant');
+  rows.push({ f, label, rep, read, material, tolerant, filteredTolerant });
   console.log([
     f, label, rep.similarity.toFixed(3), read.meanConfidence.toFixed(3),
     read.wordCount, material.length, rep.suppressed, rep.status,
@@ -82,5 +91,11 @@ for (const r of rows) {
   console.log(`  ${r.f} (${r.label}): ${confs.join(', ')}`);
 }
 console.log('  pick MIN_TOLERANT_CONFIDENCE from the gap between genuine pages\' low-confidence noise and their legitimately-read differences.');
+
+console.log(`\n--- criterion 6: effect of MIN_TOLERANT_CONFIDENCE=${MIN_TOLERANT_CONFIDENCE} on real photos ---`);
+for (const r of rows) {
+  if (r.tolerant.length === r.filteredTolerant.length) continue;
+  console.log(`  ${r.f} (${r.label}): ${r.tolerant.length} -> ${r.filteredTolerant.length} itemized tolerant findings`);
+}
 
 process.exit(falsePositives.length === 0 ? 0 : 1);
