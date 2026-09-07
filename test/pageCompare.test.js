@@ -247,6 +247,38 @@ test('a line shaped like a labeled field but matching no known label is not trea
   assert.deepEqual(byClass(t, 'field'), []);
 });
 
+// A hyphen bullet is the only marker actually observed in real photos of
+// this document's resource-persons list -- see design doc
+// docs/superpowers/specs/2026-08-27-list-item-comparison-design.md §2, §5.
+test('a hyphen-bulleted line is captured as a listItem token', () => {
+  const t = extractTokens('- Darwin Karl Pua');
+  assert.deepEqual(byClass(t, 'listItem'), ['Darwin Karl Pua']);
+});
+
+test('a non-bulleted line is not captured as a listItem token', () => {
+  const t = extractTokens('Darwin Karl Pua attended the event.');
+  assert.deepEqual(byClass(t, 'listItem'), []);
+});
+
+// Real shape, 2026-08-27 (test/fixtures/pages-special-order/2-genuine.jpg):
+// the existing 'name' pattern already claims the ALL-CAPS run inside this
+// exact line ("DENR R1") before listItem ever saw it. Extracting listItem
+// FIRST and claiming the whole line is what stops that -- without it, this
+// line would be silently dropped from comparison entirely (NUL-contaminated
+// remainder), not merely split. See design doc §2, §3.
+test('a bulleted line containing an ALL-CAPS run is captured whole, not split by the name pattern', () => {
+  const t = extractTokens('- DENR R1 Regional Executive Director');
+  assert.deepEqual(byClass(t, 'listItem'), ['DENR R1 Regional Executive Director']);
+  assert.deepEqual(byClass(t, 'name'), []);
+});
+
+test('a listItem token does not also become a name, money, date, duration, reference, or citation token', () => {
+  const t = extractTokens('- 129 Local Government Unit in Region (2pax each)');
+  assert.deepEqual(byClass(t, 'listItem'), ['129 Local Government Unit in Region (2pax each)']);
+  assert.deepEqual(byClass(t, 'money'), []);
+  assert.deepEqual(byClass(t, 'name'), []);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [

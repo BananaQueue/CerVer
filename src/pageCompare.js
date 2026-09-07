@@ -480,12 +480,47 @@ function collectFieldLabels(text) {
   return labels;
 }
 
+// A hyphen-bulleted list entry, e.g. "- Darwin Karl Pua". See
+// docs/superpowers/specs/2026-08-27-list-item-comparison-design.md.
+//
+// Unlike every other class, this runs FIRST (see extractTokens) and claims
+// the entire line's span, not just the captured value. A list entry is
+// compared as one atomic unit -- there's nothing for a later, more specific
+// class to usefully claim inside it -- and leaving it late would let 'name'
+// (which already claims ALL-CAPS runs like "DENR R1" inside real bulleted
+// lines, confirmed 2026-08-27 against a real photo) partially carve up the
+// line first, NUL-contaminating the value this would otherwise capture
+// whole and silently dropping that entry from comparison.
+//
+// Only a plain hyphen bullet is recognized -- the one marker actually
+// observed, consistently, across every real photo checked. See design doc
+// §5.
+const LIST_ITEM_LINE = /^\s*-\s+(.+?)\s*$/;
+
+function extractListItemTokens(text, claimed) {
+  const rawLines = String(text ?? '').split('\n');
+  const out = [];
+  rawLines.forEach((raw, i) => {
+    const line = stripFooter(raw);
+    // No maskClaimed call: this runs before every other extractor (see
+    // extractTokens), so claimed[i] is always empty here -- masking would
+    // be a guaranteed no-op. If that ordering ever changes, this comment is
+    // the tripwire to come back and add it.
+    const m = LIST_ITEM_LINE.exec(line);
+    if (!m) return;
+    claimed[i].push([0, line.length]);
+    out.push({ cls: 'listItem', value: m[1], line: i + 1 });
+  });
+  return out;
+}
+
 // Order matters: the first pattern to claim a span wins, so the more specific
 // classes are listed before the looser ones. `name` is last because a run of
 // capitals would otherwise swallow "Section 12" style citations. Money is not
-// in this list at all -- extractTokens runs extractMoneyTokens first, ahead
-// of this loop, so it still claims first exactly as it did when it was the
-// first entry here.
+// in this list at all -- extractTokens runs extractListItemTokens, then
+// extractMoneyTokens, ahead of this loop, so between the two of them a
+// bulleted list line or an amount still claims first exactly as money did
+// when it was the first entry here.
 //
 // The numeral accepts a pure Roman-numeral run (unchanged) or a DIGITISH run
 // anchored by at least one real digit or pipe, so a mixed OCR reading like
@@ -522,7 +557,11 @@ export function extractTokens(text, opts = {}) {
   const out = [];
   const claimed = rawLines.map(() => []);
 
-  // Money first, same position it held inside TOKEN_PATTERNS before it moved
+  // Runs before every other class -- see extractListItemTokens's own
+  // comment for why a bulleted line must claim its whole span first.
+  out.push(...extractListItemTokens(text, claimed));
+
+  // Money next, same position it held inside TOKEN_PATTERNS before it moved
   // out to get its own structural filter -- see extractMoneyTokens above.
   out.push(...extractMoneyTokens(text, claimed));
 
