@@ -62,6 +62,25 @@ test('extractTokens finds money in its several written forms', () => {
   assert.deepEqual(byClass(t, 'money'), ['₱50,000.00', 'PHP 1,200', 'P300.50']);
 });
 
+// Real case, 2026-09-07: a document spells the fee in words then repeats it
+// numerically in parentheses ("THREE HUNDRED FIFTY PESOS (₱350.00)") -- a
+// real photo's OCR dropped the currency mark entirely, reading "PESOS
+// (350.00)" with no ₱ or P anywhere. With no mark to anchor either existing
+// money branch, the amount was invisible to extraction, and the record's
+// real, untouched fee reported material "missing" on a genuine page. The
+// synthesized '₱' prefix is what keyFor already expects -- it isn't in the
+// OCR text, but this branch only ever fires once "PESOS(" has already
+// confirmed the digits really are an amount.
+test('an amount written as "PESOS (digits)" with the currency mark entirely dropped is still extracted as money', () => {
+  const t = extractTokens('a registration fee of THREE HUNDRED FIFTY PESOS (350.00), payable at the counter');
+  assert.deepEqual(byClass(t, 'money'), ['₱350.00']);
+});
+
+test('a bare digit run in parentheses, with no PESOS anchoring it, is not extracted as money', () => {
+  const t = extractTokens('see item (350.00) of the attached schedule for details');
+  assert.deepEqual(byClass(t, 'money'), []);
+});
+
 test('extractTokens finds numeric and worded dates', () => {
   const t = extractTokens('Issued 01/15/2026, effective 2026-01-15, signed 15 January 2026.');
   assert.deepEqual(byClass(t, 'date'), ['01/15/2026', '2026-01-15', '15 January 2026']);
@@ -387,6 +406,27 @@ test('a changed duration is material, reason digit-substitution', () => {
 test('letter-for-digit OCR noise in an amount is suppressed, not reported', () => {
   const r = compare(AUTH.replace('₱50,000.00', '₱5O,OOO.OO'), AUTH);
   assert.deepEqual(materials(r), []);
+});
+
+// Real case, 2026-09-07 (see the extraction-level test above for the root
+// cause): a genuine, untouched amount reported material "missing" because
+// OCR dropped its currency mark entirely.
+test('a PESOS-parenthetical amount that lost its currency mark entirely is not reported as missing', () => {
+  const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
+  const r = compare(auth.replace('₱350.00', '350.00'), auth);
+  assert.deepEqual(r.findings, []);
+});
+
+// Regression guard: only true mark-loss is forgiven -- an amount that is
+// present but genuinely wrong is still caught, mark or no mark.
+test('a PESOS-parenthetical amount that is present but reads as a different value is still material', () => {
+  const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
+  const r = compare(auth.replace('₱350.00', '450.00'), auth);
+  const f = materials(r).find((x) => x.cls === 'money');
+  assert.ok(f, 'expected a material money finding');
+  assert.equal(f.expected, '₱350.00');
+  assert.equal(f.found, '₱450.00');
+  assert.equal(f.reason, 'digit-substitution');
 });
 
 test('letter-for-digit OCR noise using an uppercase-only lookalike (B for 8) is suppressed, not reported', () => {

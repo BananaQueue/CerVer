@@ -256,6 +256,26 @@ const LOOSE_MONEY = new RegExp(
   'g'
 );
 
+// A registration-fee amount spelled in words then repeated numerically in
+// parentheses -- the standard convention in these documents ("THREE HUNDRED
+// FIFTY PESOS (₱350.00)"). Real case, 2026-09-07: a photo's OCR dropped the
+// currency mark entirely ("PESOS (350.00)", no ₱ or P anywhere), and with no
+// mark to anchor either branch of LOOSE_MONEY the amount vanished from
+// extraction completely -- the record's real, untouched fee reported
+// material "missing" on a genuine page.
+//
+// Anchored on the literal word PESOS(S) immediately before the parenthesis,
+// not a bare digit run on its own -- a bare number in parentheses is far too
+// common elsewhere (list numbering, cross-references, dates) to extract
+// safely without that anchor. Group 1 captures only the digit run; the mark
+// is synthesized back on in extractMoneyTokens below, since keyFor already
+// expects one and this branch only ever fires once "PESOS(" has confirmed
+// the digits really are an amount.
+const PESOS_PAREN = new RegExp(
+  String.raw`\bPESOS?\s*\(\s*(${amount(`[${DIGITISH}]`)})\s*\)`,
+  'gi',
+);
+
 // Does a bare-P match that runs straight into a letter read as a real amount
 // that lost its trailing space, or as digit-lookalike noise inside a misread
 // word? Three signals, each closing a case the others do not:
@@ -349,6 +369,14 @@ function extractMoneyTokens(text, claimed) {
       if (isBareP && gluedToNextWord && !gluedReadsAsAmount(m[0])) continue;
       claimed[i].push([m.index, end]);
       out.push({ cls: 'money', value: m[0], line: i + 1 });
+    }
+    PESOS_PAREN.lastIndex = 0;
+    let p;
+    while ((p = PESOS_PAREN.exec(masked)) !== null) {
+      const value = `₱${p[1]}`;
+      if (!hasRealDigit(value)) continue;
+      claimed[i].push([p.index, p.index + p[0].length]);
+      out.push({ cls: 'money', value, line: i + 1 });
     }
   });
   return out;
