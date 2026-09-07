@@ -251,8 +251,51 @@ test('a line shaped like a labeled field but matching no known label is not trea
 // this document's resource-persons list -- see design doc
 // docs/superpowers/specs/2026-08-27-list-item-comparison-design.md §2, §5.
 test('a hyphen-bulleted line is captured as a listItem token', () => {
-  const t = extractTokens('- Darwin Karl Pua');
-  assert.deepEqual(byClass(t, 'listItem'), ['Darwin Karl Pua']);
+  const t = extractTokens('- All PENROS/CENROS (2pax each)\n- Darwin Karl Pua');
+  assert.deepEqual(byClass(t, 'listItem'), ['All PENROS/CENROS (2pax each)', 'Darwin Karl Pua']);
+});
+
+// Real case, 2026-09-07: a photo taken from farther back (more background in
+// frame, held at an angle) read stray marks -- background clutter, a
+// fingertip's edge -- before EVERY bullet on the page ("oo ~~ - 129 Local
+// Government...", "_ i - Regional Ecology Center...", "-. _- - Maria Delia
+// Cristina..."). The strict start-of-line anchor made every single bullet on
+// that photo invisible to extraction, and with them, the one alteration this
+// whole feature exists to catch (Darwin Karl Pua, appended to the same
+// list) -- reported "unaltered" when the sheet was not.
+test('a hyphen-bulleted line is found past stray marks before the bullet itself, when a neighboring line confirms it is really part of a list', () => {
+  const t = extractTokens('- Green Cycle Innovative Solutions Inc.\noo ~~ - 129 Local Government Unit in Region (2pax each)');
+  assert.deepEqual(byClass(t, 'listItem'), [
+    'Green Cycle Innovative Solutions Inc.',
+    '129 Local Government Unit in Region (2pax each)',
+  ]);
+});
+
+test('a hyphen-bulleted line is found even when the stray marks before it include a hyphen of their own', () => {
+  const t = extractTokens('- Support Staff (4)\n-. _- - Maria Delia Cristina M. Valdez/representative');
+  assert.deepEqual(byClass(t, 'listItem'), [
+    'Support Staff (4)',
+    'Maria Delia Cristina M. Valdez/representative',
+  ]);
+});
+
+// Real regression, 2026-09-07: found immediately after loosening the match
+// above to tolerate noise before a real bullet. That same looseness let an
+// ISOLATED line elsewhere on a genuine photo of a DIFFERENT, non-bulleted
+// document match by sheer chance ("1/3. xy - KI + B6IR-cer", garbled OCR of
+// something in the footer/seal area) and get reported as an added list
+// entry -- a false "altered" verdict on a genuine page. A real bulleted
+// list is a multi-line structure; a single stray line matching the shape,
+// with neither neighbor also matching, is far more likely to be noise than
+// a list of one.
+test('an isolated line matching the bullet shape, with no adjacent bulleted line, is not treated as a list item', () => {
+  const t = extractTokens('Some ordinary paragraph text here on its own line.\n1/3. xy - KI + B6IR-cer\nMore ordinary paragraph text follows on this line.');
+  assert.deepEqual(byClass(t, 'listItem'), []);
+});
+
+test('the first and last items of a real list are still found, each having only one matching neighbor', () => {
+  const t = extractTokens('- Aling Tindera Program\n- Nutriasia\n- Geocycle');
+  assert.deepEqual(byClass(t, 'listItem'), ['Aling Tindera Program', 'Nutriasia', 'Geocycle']);
 });
 
 test('a non-bulleted line is not captured as a listItem token', () => {
@@ -267,14 +310,17 @@ test('a non-bulleted line is not captured as a listItem token', () => {
 // line would be silently dropped from comparison entirely (NUL-contaminated
 // remainder), not merely split. See design doc §2, §3.
 test('a bulleted line containing an ALL-CAPS run is captured whole, not split by the name pattern', () => {
-  const t = extractTokens('- DENR R1 Regional Executive Director');
-  assert.deepEqual(byClass(t, 'listItem'), ['DENR R1 Regional Executive Director']);
+  const t = extractTokens('- All PENROS/CENROS (2pax each)\n- DENR R1 Regional Executive Director');
+  assert.deepEqual(byClass(t, 'listItem'), ['All PENROS/CENROS (2pax each)', 'DENR R1 Regional Executive Director']);
   assert.deepEqual(byClass(t, 'name'), []);
 });
 
 test('a listItem token does not also become a name, money, date, duration, reference, or citation token', () => {
-  const t = extractTokens('- 129 Local Government Unit in Region (2pax each)');
-  assert.deepEqual(byClass(t, 'listItem'), ['129 Local Government Unit in Region (2pax each)']);
+  const t = extractTokens('- 129 Local Government Unit in Region (2pax each)\n- Green Cycle Innovative Solutions Inc.');
+  assert.deepEqual(byClass(t, 'listItem'), [
+    '129 Local Government Unit in Region (2pax each)',
+    'Green Cycle Innovative Solutions Inc.',
+  ]);
   assert.deepEqual(byClass(t, 'money'), []);
   assert.deepEqual(byClass(t, 'name'), []);
 });

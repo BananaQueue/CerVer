@@ -495,20 +495,45 @@ function collectFieldLabels(text) {
 // Only a plain hyphen bullet is recognized -- the one marker actually
 // observed, consistently, across every real photo checked. See design doc
 // §5.
-const LIST_ITEM_LINE = /^\s*-\s+(.+?)\s*$/;
+//
+// Not anchored to the line's true start. Real case, 2026-09-07: a photo
+// taken from farther back (more background in frame) read stray marks --
+// clutter, a fingertip's edge -- before EVERY bullet on the page, and the
+// original ^\s* anchor made every single one invisible, along with the one
+// alteration this feature exists to catch. The [A-Z0-9] requirement right
+// after the hyphen+space is what keeps this from just grabbing the FIRST
+// hyphen on the line when the noise itself contains one ("-. _- - Maria
+// Delia..." -- the noise's own hyphen is followed by another hyphen, not a
+// real word, so it fails this check and the search continues to the real
+// bullet). Every real item on this document starts with a capital letter or
+// a digit; a future document whose items don't would need this revisited.
+const LIST_ITEM_LINE = /-\s+([A-Z0-9].*?)\s*$/;
 
 function extractListItemTokens(text, claimed) {
   const rawLines = String(text ?? '').split('\n');
+  const stripped = rawLines.map((raw) => stripFooter(raw));
+  // Matched per line first, unfiltered, so adjacency (below) can be decided
+  // from the whole set before anything is claimed.
+  const matches = stripped.map((line) => LIST_ITEM_LINE.exec(line));
   const out = [];
-  rawLines.forEach((raw, i) => {
-    const line = stripFooter(raw);
+  matches.forEach((m, i) => {
+    if (!m) return;
+    // A genuine bulleted list is a multi-line structure. Real regression,
+    // 2026-09-07: loosening LIST_ITEM_LINE to tolerate noise before a real
+    // bullet (see its own comment) also let an ISOLATED line elsewhere on a
+    // genuine photo of an unrelated, non-bulleted document match by sheer
+    // chance ("1/3. xy - KI + B6IR-cer", garbled OCR of footer/seal noise),
+    // fabricating an "added" list entry -- a false "altered" verdict on a
+    // genuine page. Requiring at least one immediate neighbor to also match
+    // is what a real list actually looks like and noise essentially never
+    // does; the trade-off, accepted and not yet seen in practice, is a
+    // genuine list of exactly one item would be invisible too.
+    if (!matches[i - 1] && !matches[i + 1]) return;
     // No maskClaimed call: this runs before every other extractor (see
     // extractTokens), so claimed[i] is always empty here -- masking would
     // be a guaranteed no-op. If that ordering ever changes, this comment is
     // the tripwire to come back and add it.
-    const m = LIST_ITEM_LINE.exec(line);
-    if (!m) return;
-    claimed[i].push([0, line.length]);
+    claimed[i].push([0, stripped[i].length]);
     out.push({ cls: 'listItem', value: m[1], line: i + 1 });
   });
   return out;
