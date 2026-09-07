@@ -810,7 +810,7 @@ export function compare(ocrText, authText) {
   // testing presence alone (`.has`) let a duplicated amount hide behind the
   // single genuine occurrence and produce no finding at all.
   for (const o of ocrTokens) {
-    if (!STRICT.has(o.cls)) continue;
+    if (!STRICT.has(o.cls) && o.cls !== 'listItem') continue;
     if (consumedNear.has(o)) continue; // already paired above
     const key = keyFor(o.cls, o.value);
     const hit = authByKey.get(key);

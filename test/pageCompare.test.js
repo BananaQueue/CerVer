@@ -432,6 +432,34 @@ test('a listItem value differing only by a classic letter-run confusion (rn for 
   assert.deepEqual(r.findings, []);
 });
 
+// The one alteration this whole design exists to catch: a name appended to
+// the list with no record counterpart at all (real case, 2026-08-27,
+// test/fixtures/pages-special-order/2-altered.jpg -- "Darwin Karl Pua").
+test('an added list entry with no record counterpart is reported as material', () => {
+  const ocr = LIST_AUTH.replace(
+    '- DENR R1 Regional Executive Director',
+    '- DENR R1 Regional Executive Director\n- Darwin Karl Pua',
+  );
+  const r = compare(ocr, LIST_AUTH);
+  assert.deepEqual(materials(r), [{
+    severity: 'material', cls: 'listItem', line: null,
+    expected: null, found: 'Darwin Karl Pua', reason: 'added',
+  }]);
+});
+
+// Real genuine photos (2026-08-27) demonstrated ordinary OCR can drop most
+// of a bulleted list under normal capture conditions -- treating an absence
+// as material would flag a normal bad-angle photo as tampered. See design
+// doc §2, §4.
+test('a list entry missing from the photo is tolerant, never material', () => {
+  const ocr = LIST_AUTH.replace('- Atty. Ivy Joyce De Pedro\n', '');
+  const r = compare(ocr, LIST_AUTH);
+  assert.deepEqual(materials(r), []);
+  const tolerant = r.findings.filter((f) => f.severity === 'tolerant' && f.cls === 'listItem');
+  assert.equal(tolerant.length, 1);
+  assert.equal(tolerant[0].expected, 'Atty. Ivy Joyce De Pedro');
+});
+
 // The real case this feature exists for: live-tested 2026-08-25, a genuine
 // alteration in ordinary sentence-case text no other token class covers.
 test('a pluralized field value (Corporation -> Corporations) is material', () => {
