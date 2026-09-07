@@ -271,8 +271,20 @@ const LOOSE_MONEY = new RegExp(
 // is synthesized back on in extractMoneyTokens below, since keyFor already
 // expects one and this branch only ever fires once "PESOS(" has confirmed
 // the digits really are an amount.
+//
+// The optional [^\d\s)₱Pp] right after the parenthesis tolerates one stray
+// character standing in for the mark, not just its outright absence. Real
+// case, 2026-09-07, a different photo of the same document: OCR didn't drop
+// the mark, it substituted it -- "PESOS (£350.00)", a pound sign where the
+// peso sign should be. Neither the ₱/PHP/bare-P branches above (which need
+// a real currency letter/mark) nor a digit run starting immediately after
+// "(" matched a pound sign sitting in between, so this amount vanished too.
+// ₱ and P/p are excluded from the tolerated character specifically so this
+// can never double-match what LOOSE_MONEY already extracts correctly on its
+// own -- if the stray slot matched those too, "PESOS (₱350.00)" would
+// produce two money tokens for the same amount instead of one.
 const PESOS_PAREN = new RegExp(
-  String.raw`\bPESOS?\s*\(\s*(${amount(`[${DIGITISH}]`)})\s*\)`,
+  String.raw`\bPESOS?\s*\(\s*[^\d\s)₱Pp]?\s*(${amount(`[${DIGITISH}]`)})\s*\)`,
   'gi',
 );
 

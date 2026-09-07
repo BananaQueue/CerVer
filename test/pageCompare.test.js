@@ -76,6 +76,19 @@ test('an amount written as "PESOS (digits)" with the currency mark entirely drop
   assert.deepEqual(byClass(t, 'money'), ['₱350.00']);
 });
 
+// Real case, 2026-09-07, a different photo of the same document: this time
+// OCR didn't drop the mark, it substituted it -- "PESOS (£350.00)", a pound
+// sign where the peso sign should be. Neither existing money branch (which
+// need a literal ₱/PHP/P) nor the mark-dropped branch above (whose digit
+// run must start immediately after "(") had anything to match, so this
+// amount vanished too. ₱ and P/p are excluded from the tolerated stray
+// character so this can never double-match what LOOSE_MONEY already
+// extracts correctly on its own.
+test('an amount written as "PESOS (digits)" with the currency mark misread as an unrelated symbol is still extracted as money', () => {
+  const t = extractTokens('a registration fee of THREE HUNDRED FIFTY PESOS (£350.00), payable at the counter');
+  assert.deepEqual(byClass(t, 'money'), ['₱350.00']);
+});
+
 test('a bare digit run in parentheses, with no PESOS anchoring it, is not extracted as money', () => {
   const t = extractTokens('see item (350.00) of the attached schedule for details');
   assert.deepEqual(byClass(t, 'money'), []);
@@ -414,6 +427,14 @@ test('letter-for-digit OCR noise in an amount is suppressed, not reported', () =
 test('a PESOS-parenthetical amount that lost its currency mark entirely is not reported as missing', () => {
   const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
   const r = compare(auth.replace('₱350.00', '350.00'), auth);
+  assert.deepEqual(r.findings, []);
+});
+
+// Real case, 2026-09-07, a different real photo: the mark wasn't dropped,
+// it was misread as an unrelated symbol (£ for ₱).
+test('a PESOS-parenthetical amount whose currency mark was misread as an unrelated symbol is not reported as missing', () => {
+  const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
+  const r = compare(auth.replace('₱350.00', '£350.00'), auth);
   assert.deepEqual(r.findings, []);
 });
 
