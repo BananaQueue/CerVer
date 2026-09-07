@@ -288,6 +288,36 @@ const PESOS_PAREN = new RegExp(
   'gi',
 );
 
+// "PESOS" (or "PESO") itself hyphenated across a print line-wrap -- real
+// case, 2026-09-07, a different photo of the same document again: justified
+// print broke the word at the right margin ("...FIFTY PE-" / "SOS
+// (450.00)..."). PESOS_PAREN matches within one line, so neither line
+// contains the whole word and the amount vanished from extraction entirely.
+// That photo's material verdict still came out right, by coincidence -- the
+// record's own value simply had nothing to match -- but the same break on a
+// genuine, untouched photo would misfire identically.
+//
+// Checked only when line i ends in a short hyphenated fragment; the tail
+// and the next line's head must reconstruct exactly PESOS or PESO before
+// anything else is attempted, so an unrelated hyphenated word (e.g.
+// "MANAGE-" / "MENT") can never trigger this.
+function dehyphenatedPesosMatch(prevLine, line) {
+  const tail = /([A-Za-z]{1,4})-\s*$/.exec(prevLine);
+  if (!tail) return null;
+  const head = /^\s*([A-Za-z]{1,4})\b/.exec(line);
+  if (!head) return null;
+  const joined = (tail[1] + head[1]).toUpperCase();
+  if (joined !== 'PESOS' && joined !== 'PESO') return null;
+  const restStart = head.index + head[0].length;
+  const rest = line.slice(restStart);
+  const m = new RegExp(
+    String.raw`^\s*\(\s*[^\d\s)₱Pp]?\s*(${amount(`[${DIGITISH}]`)})\s*\)`,
+    'i',
+  ).exec(rest);
+  if (!m) return null;
+  return { value: `₱${m[1]}`, start: restStart, end: restStart + m[0].length };
+}
+
 // Does a bare-P match that runs straight into a letter read as a real amount
 // that lost its trailing space, or as digit-lookalike noise inside a misread
 // word? Three signals, each closing a case the others do not:
@@ -389,6 +419,14 @@ function extractMoneyTokens(text, claimed) {
       if (!hasRealDigit(value)) continue;
       claimed[i].push([p.index, p.index + p[0].length]);
       out.push({ cls: 'money', value, line: i + 1 });
+    }
+    if (i > 0) {
+      const prevLine = maskClaimed(stripFooter(rawLines[i - 1]), claimed[i - 1]);
+      const dh = dehyphenatedPesosMatch(prevLine, masked);
+      if (dh && hasRealDigit(dh.value)) {
+        claimed[i].push([dh.start, dh.end]);
+        out.push({ cls: 'money', value: dh.value, line: i + 1 });
+      }
     }
   });
   return out;

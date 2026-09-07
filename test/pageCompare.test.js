@@ -89,6 +89,24 @@ test('an amount written as "PESOS (digits)" with the currency mark misread as an
   assert.deepEqual(byClass(t, 'money'), ['₱350.00']);
 });
 
+// Real case, 2026-09-07, a different photo again: this time OCR read the
+// mark fine, but justified print hyphenated the word PESOS itself across
+// the line wrap ("...FIFTY PE-" / "SOS (450.00)..."). PESOS_PAREN matches
+// within one line, so neither line contains the whole word and the amount
+// vanished from extraction entirely. The material verdict on that photo
+// still came out right, by coincidence (the record's own value simply had
+// nothing to match) -- but the same break on a genuine, untouched photo
+// would misfire identically.
+test('an amount written as "PESOS (digits)" still extracts when PESOS itself is hyphenated across a line wrap', () => {
+  const t = extractTokens('a registration fee of FOUR HUNDRED FIFTY PE-\nSOS (450.00), payable at the counter');
+  assert.deepEqual(byClass(t, 'money'), ['₱450.00']);
+});
+
+test('an unrelated word hyphenated across a line wrap is not mistaken for PESOS', () => {
+  const t = extractTokens('the ENVIRONMENTAL MANAGE-\nMENT (450.00) placeholder');
+  assert.deepEqual(byClass(t, 'money'), []);
+});
+
 test('a bare digit run in parentheses, with no PESOS anchoring it, is not extracted as money', () => {
   const t = extractTokens('see item (350.00) of the attached schedule for details');
   assert.deepEqual(byClass(t, 'money'), []);
@@ -436,6 +454,33 @@ test('a PESOS-parenthetical amount whose currency mark was misread as an unrelat
   const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
   const r = compare(auth.replace('₱350.00', '£350.00'), auth);
   assert.deepEqual(r.findings, []);
+});
+
+// Real case, 2026-09-07, a different real photo: PESOS itself hyphenated
+// across a print line wrap. Checks materials(), not the whole findings
+// list -- "THREE HUNDRED FIFTY PESOS" is itself an ALL-CAPS run, so
+// splitting PESOS across two lines here (unrelated to this fix) also
+// breaks the separate 'name' class's own match on that phrase, producing
+// its own ordinary tolerant finding. That's correct, pre-existing 'name'
+// behavior working as designed, not something this money fix touches.
+test('a PESOS-parenthetical amount whose currency word is hyphenated across a line wrap is not reported as missing', () => {
+  const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
+  const ocr = auth.replace('THREE HUNDRED FIFTY PESOS (₱350.00)', 'THREE HUNDRED FIFTY PE-\nSOS (₱350.00)');
+  const r = compare(ocr, auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// Regression guard: the hyphenation doesn't blind the check to a real
+// change -- an amount that genuinely differs is still caught even split
+// across a line wrap.
+test('a PESOS-parenthetical amount split by a line wrap is still material when the value actually changed', () => {
+  const auth = AUTH + '\nEach participant shall pay a registration fee of THREE HUNDRED FIFTY PESOS (₱350.00).';
+  const ocr = auth.replace('THREE HUNDRED FIFTY PESOS (₱350.00)', 'FOUR HUNDRED FIFTY PE-\nSOS (₱450.00)');
+  const r = compare(ocr, auth);
+  const f = materials(r).find((x) => x.cls === 'money');
+  assert.ok(f, 'expected a material money finding');
+  assert.equal(f.expected, '₱350.00');
+  assert.equal(f.found, '₱450.00');
 });
 
 // Regression guard: only true mark-loss is forgiven -- an amount that is
