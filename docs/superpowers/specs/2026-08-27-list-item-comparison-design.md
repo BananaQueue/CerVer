@@ -1,7 +1,7 @@
 # Page Image OCR — List-Item Comparison — Design
 
 **Date:** 2026-08-27
-**Status:** Approved design, pre-implementation
+**Status:** Implemented and verified against real photos (2026-08-27). Both criteria hold as designed: `2-altered.jpg` now catches "Darwin Karl Pua" as a material `added` finding, and every genuine photo — including one that badly under-recognizes the list — reports zero material `listItem` findings. The original fixture set (`test/fixtures/pages/`, zero bulleted lines) is byte-for-byte unchanged, including the one pre-existing, already-accepted dropped-trailing-letter exception on `1-genuine.jpg`.
 **Extends:** `2026-08-13-page-image-ocr-design.md`, `2026-08-25-labeled-field-comparison-design.md`
 
 ## 1. Problem
