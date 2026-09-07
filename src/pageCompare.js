@@ -643,7 +643,7 @@ function keyFor(cls, value) {
   // "Category B" photographed as "Category 8", which only this order
   // forgives.
   const foldedCase = foldGlyphs(collapsed).toLowerCase();
-  if (cls === 'name' || cls === 'field') return foldLetterNoise(foldedCase);
+  if (cls === 'name' || cls === 'field' || cls === 'listItem') return foldLetterNoise(foldedCase);
   const key = foldedCase.replace(/^(?:php|p)\s?/, '₱');
   // Reference only: fold the same hyphen-lookalikes REFERENCE_SEP already
   // tolerates at extraction to a canonical '-', so a misread separator

@@ -410,6 +410,28 @@ test('a field value differing only by a classic letter-run confusion (rn for m) 
   assert.deepEqual(r.findings, []);
 });
 
+const LIST_AUTH = [
+  'RESOURCE PERSONS/GUESTS:',
+  '- Ms. Fernie D. Sitsit',
+  '- Atty. Ivy Joyce De Pedro',
+  '- Maria Delia Cristina M. Valdez',
+  '- DENR R1 Regional Executive Director',
+  'The identified personnel are expected to participate during the event '
+    + 'and perform as secretariats and other functions deemed necessary for '
+    + 'the completion of the Summit.',
+].join('\n');
+
+// rn->m is already one of foldLetterNoise's folds (same confusion already
+// covered for 'field' -- "Fernando"/"Femando" above). A single-character
+// glyph confusion (e.g. "R1"/"RI") is NOT a valid test of this branch: that
+// fold runs unconditionally in keyFor before any class-specific branch, so
+// it would pass identically with or without this task's change. Only a
+// multi-letter run confusion actually exercises foldLetterNoise.
+test('a listItem value differing only by a classic letter-run confusion (rn for m) is not reported at all', () => {
+  const r = compare(LIST_AUTH.replace('Fernie', 'Femie'), LIST_AUTH);
+  assert.deepEqual(r.findings, []);
+});
+
 // The real case this feature exists for: live-tested 2026-08-25, a genuine
 // alteration in ordinary sentence-case text no other token class covers.
 test('a pluralized field value (Corporation -> Corporations) is material', () => {
