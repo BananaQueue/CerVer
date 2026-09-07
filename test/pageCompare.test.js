@@ -377,6 +377,34 @@ test('an i-for-1 and equals-for-hyphen OCR misread in a control number is suppre
   assert.deepEqual(materials(r), []);
 });
 
+// Real complaint, 2026-08-27: a photo framed to focus on the document's
+// content can legitimately crop the footer stamp out entirely -- nothing
+// reference-shaped is read anywhere. That's a different claim than "the
+// reference is wrong," and treating true absence as material flagged
+// ordinary cropped photos as altered.
+test('a control number entirely absent from the photo (nothing reference-shaped read at all) is tolerant, never material', () => {
+  const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-001024.');
+  const ocr = auth.replace('Section 12, per R1-2026-001024.', 'Section 12.');
+  const r = compare(ocr, auth);
+  assert.deepEqual(materials(r), []);
+  const tolerant = r.findings.find((f) => f.severity === 'tolerant' && f.cls === 'reference');
+  assert.equal(tolerant.expected, 'R1-2026-001024');
+  assert.equal(tolerant.found, null);
+});
+
+// Regression guard: a reference that IS read, even wrong, is still fully
+// compared -- only true absence is softened, not the actual tampering
+// check. A digit-substituted control number remains material.
+test('a control number that is present but reads as a different value is still material', () => {
+  const auth = AUTH.replace('Section 12.', 'Section 12, per R1-2026-001024.');
+  const ocr = auth.replace('R1-2026-001024', 'R1-2026-001099');
+  const r = compare(ocr, auth);
+  const f = materials(r).find((x) => x.cls === 'reference');
+  assert.equal(f.expected, 'R1-2026-001024');
+  assert.equal(f.found, 'R1-2026-001099');
+  assert.equal(f.reason, 'digit-substitution');
+});
+
 // Real case, 2026-08-27: a footer's page indicator ("p2/2") was read as a
 // phantom bare-P amount once the whole footer line leaked through
 // unstripped (its reference token had failed to extract). This guard

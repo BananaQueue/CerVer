@@ -796,6 +796,24 @@ export function compare(ocrText, authText) {
       });
       continue;
     }
+    // A control/reference number's true absence -- nothing reference-shaped
+    // read ANYWHERE in the photo -- is not the same claim as "this number
+    // is wrong." Real complaint, 2026-08-27: a photo framed to focus on the
+    // document's content legitimately crops the footer stamp out of frame
+    // entirely; reporting that as an alteration flags an ordinary photo,
+    // not a tampered one. A reference that IS read, even garbled, is still
+    // fully compared above via the ordinary `near` path and reasonFor --
+    // only true absence (near === null) is softened, and only for this one
+    // class. Every other STRICT class, and an unexpected reference VALUE
+    // appearing in the photo-to-record pass below, is unchanged.
+    if (t.cls === 'reference' && !near) {
+      suppressed++;
+      findings.push({
+        severity: 'tolerant', cls: t.cls, line: t.line,
+        expected: t.value, found: null, reason: 'missing',
+      });
+      continue;
+    }
     findings.push({
       severity: 'material', cls: t.cls, line: t.line,
       expected: t.value,
