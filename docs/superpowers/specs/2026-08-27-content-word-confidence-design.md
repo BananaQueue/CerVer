@@ -1,7 +1,13 @@
 # Page Image OCR — Content-Word Confidence — Design
 
 **Date:** 2026-08-27
-**Status:** Approved design, pre-implementation
+**Status:** Implemented and verified against real photos (2026-08-27). Both
+fixture sets recalibrated clean: every confidence reading rose as predicted
+(genuine floor 0.750-0.866 depending on set, real-poor ceiling stays at
+0.514-0.576, comfortably below `MIN_CONFIDENCE`), and criteria 1 and 4 (zero
+material false positives, known alterations still caught) hold exactly as
+before on both sets. `MIN_CONFIDENCE`'s own comment in `verifyPageImage.js`
+is updated to record the new measured gap.
 **Extends:** `2026-08-13-page-image-ocr-design.md`
 
 ## 1. Problem

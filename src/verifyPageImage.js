@@ -15,16 +15,20 @@ import { dropLowConfidenceTolerant } from './ocrNoiseFilter.js';
 // Below this, the reading is too poor to say anything about the page. Reported
 // as a request for a better photo — never as a finding.
 //
-// MEASURED (2026-08-24, real poor/genuine gap). Most `poor`-labelled attempts
-// (angle, reduced framing) still read at 0.740-0.760 — ABOVE the lowest
-// genuine reading — because the iPhone's Deep Fusion pipeline (on by default,
-// no user setting to disable it) corrects deliberately bad captures back to
-// something legible. That limitation is accepted, not fixed here: confidence
-// alone cannot catch every poor photo, only genuinely degraded ones. Two
-// captures did get past Deep Fusion (real motion blur / dim handheld shake):
-// 0.470 and 0.550, both clearly below the lowest genuine reading measured
-// across 10 genuine samples (0.720). This sits with margin on both sides of
-// that real gap, not a guess above the genuine floor.
+// MEASURED (2026-08-24, real poor/genuine gap; re-measured 2026-08-27 after
+// ocr.js's meanConfidence switched from Tesseract's raw page-average to
+// content-word-only confidence — see
+// docs/superpowers/specs/2026-08-27-content-word-confidence-design.md).
+// Most `poor`-labelled attempts (angle, reduced framing) still read at
+// 0.763-0.834 — ABOVE the lowest genuine reading — because the iPhone's Deep
+// Fusion pipeline (on by default, no user setting to disable it) corrects
+// deliberately bad captures back to something legible. That limitation is
+// accepted, not fixed here: confidence alone cannot catch every poor photo,
+// only genuinely degraded ones. Two captures did get past Deep Fusion (real
+// motion blur / dim handheld shake): 0.514 and 0.576, both clearly below the
+// lowest genuine reading measured across 11 genuine samples (0.750). This
+// sits with margin on both sides of that real gap (+0.074 above the
+// real-poor ceiling, -0.10 below the genuine floor), not a guess.
 const MIN_CONFIDENCE = 0.65;
 
 // MEASURED (2026-08-25, real genuine-page data via scripts/ocr-calibrate.mjs's

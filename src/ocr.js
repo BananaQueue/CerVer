@@ -126,6 +126,35 @@ function flattenWords(data) {
   return out;
 }
 
+// Tesseract's own data.confidence is a straight mean over every detected
+// "word," including bare punctuation it scores near 0% almost reflexively --
+// a real photo (page 2 of a "Special Order" memo) read its substantive
+// content cleanly but still measured meanConfidence 0.62, dragged down by
+// ~40 near-zero punctuation detections, and was wrongly rejected as
+// image_unreadable. Averaging only over content-bearing words (2+
+// alphanumeric characters) fixes that specific photo without narrowing the
+// gap against genuinely poor captures -- see
+// docs/superpowers/specs/2026-08-27-content-word-confidence-design.md §2 for
+// the measured data.
+//
+// words is the already-mapped array recognize() builds below (confidence
+// already normalized to 0..1) -- data is the raw Tesseract page result,
+// needed only for the fallback's own 0..100 confidence.
+export function contentConfidence(words, data) {
+  const contentWords = words.filter((w) => /[a-zA-Z0-9]{2,}/.test(w.text));
+  if (contentWords.length === 0) {
+    // Nothing to average over (a blank or fully illegible capture) --
+    // falls back to Tesseract's own page-level average rather than
+    // returning 0, which would make "read fine, just no content words"
+    // indistinguishable from "read nothing." Same 0..100 -> 0..1 clamp
+    // recognize() has always applied.
+    return Number.isFinite(data?.confidence)
+      ? Math.min(1, Math.max(0, data.confidence / 100))
+      : 0;
+  }
+  return contentWords.reduce((sum, w) => sum + w.confidence, 0) / contentWords.length;
+}
+
 export async function recognize(imageBytes) {
   const w = await worker();
   // { blocks: true } requests the block/paragraph/line/word tree -- without
@@ -134,33 +163,28 @@ export async function recognize(imageBytes) {
   // returned before locateFindings() needed anything more granular.
   const { data } = await w.recognize(Buffer.from(imageBytes), {}, { blocks: true });
   const text = String(data?.text ?? '');
+  // Per-word confidence and position, for locateFindings() (src/ocrRegions.js)
+  // to draw a box at a finding's actual location on the photo, AND for
+  // contentConfidence above (built first so meanConfidence can use it).
+  // bbox is passed through unchanged; it's already in the original photo's
+  // pixel space, which is what the frontend needs (spec 2026-08-17 §7).
+  const words = flattenWords(data).map((word) => ({
+    text: String(word?.text ?? ''),
+    confidence: Number.isFinite(word?.confidence)
+      ? Math.min(1, Math.max(0, word.confidence / 100))
+      : 0,
+    bbox: {
+      x0: word?.bbox?.x0 ?? 0,
+      y0: word?.bbox?.y0 ?? 0,
+      x1: word?.bbox?.x1 ?? 0,
+      y1: word?.bbox?.y1 ?? 0,
+    },
+  }));
   return {
     text,
-    // tesseract reports 0..100; the rest of the app talks in 0..1. Some
-    // builds report -1 (still Number.isFinite) when nothing was recognized,
-    // so clamp rather than let a blank read report a negative confidence.
-    meanConfidence: Number.isFinite(data?.confidence)
-      ? Math.min(1, Math.max(0, data.confidence / 100))
-      : 0,
+    meanConfidence: contentConfidence(words, data),
     wordCount: text.split(/\s+/).filter(Boolean).length,
-    // Per-word confidence and position, for locateFindings() (src/ocrRegions.js)
-    // to draw a box at a finding's actual location on the photo. Tesseract
-    // already computes this as part of the same recognize() call above --
-    // this was simply discarded until now. bbox is passed through unchanged;
-    // it's already in the original photo's pixel space, which is what the
-    // frontend needs (spec 2026-08-17 §7).
-    words: flattenWords(data).map((word) => ({
-      text: String(word?.text ?? ''),
-      confidence: Number.isFinite(word?.confidence)
-        ? Math.min(1, Math.max(0, word.confidence / 100))
-        : 0,
-      bbox: {
-        x0: word?.bbox?.x0 ?? 0,
-        y0: word?.bbox?.y0 ?? 0,
-        x1: word?.bbox?.x1 ?? 0,
-        y1: word?.bbox?.y1 ?? 0,
-      },
-    })),
+    words,
   };
 }
 
