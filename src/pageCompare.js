@@ -615,6 +615,37 @@ const LIST_ITEM_LINE = /-\s+([A-Z0-9].*?)\s*$/;
 // not trusted -- there is no local way to tell that apart from a wrapped
 // continuation. Accepted, documented gap, not an oversight -- see the
 // design doc's honest limits (§5).
+//
+// A next-line marker only counts as bounding when SOME marker on that
+// line has a GREATER number than the current item's -- not merely "a
+// marker is present there", and not restricted to the next line's first
+// marker, and not required to be the exact successor either. Real
+// regressions, all 2026-09-09 (test/fixtures/pages-special-order-383/,
+// found one after another against real photos):
+//
+//   - Checking only "a marker is present" let item 18 -- the shorter
+//     (right) column's LAST item, sitting on the same row as the longer
+//     (left) column's item 8, with no same-line neighbor of its own --
+//     be wrongly bounded by the next line's "9." (the left column
+//     continuing), a marker, but for a SMALLER, unrelated number. That
+//     produced a false "added" material finding on a genuine photo: item
+//     18 was extracted (with trailing noise) with no record counterpart,
+//     since the record's own #18 is never extracted at all (see this
+//     comment's next paragraph).
+//   - Requiring a greater number but checking only the next line's FIRST
+//     marker then broke item 11 (the right column's first item): its
+//     genuine successor, item 12, is on the next physical line too, but
+//     as that line's SECOND marker (the left column's own item 2 comes
+//     first) -- checking only the first marker missed it.
+//   - Requiring the EXACT successor (not just "greater"), searched across
+//     the whole next line, then broke a genuine item whose own successor
+//     had gone missing from the photo one line below it: with item 10
+//     absent, item 9's "next line" became item 11's line, which has no
+//     marker equal to 9+1 -- cascading a second, unrelated item into a
+//     false "missing" alongside the one that was actually gone. "Greater
+//     than", not "exactly one more", is what a genuine continuation
+//     actually requires; the exact-successor version was stricter than
+//     the real data supports.
 const NUMBERED_MARKER = /\b(\d{1,2})\.\s+/g;
 
 function extractNumberedItemTokens(text, claimed) {
@@ -624,8 +655,7 @@ function extractNumberedItemTokens(text, claimed) {
   const out = [];
   lineMarkers.forEach((markers, i) => {
     if (markers.length === 0) return;
-    const nextLineStartsWithMarker = i + 1 < stripped.length
-      && /^\s*\d{1,2}\.\s+/.test(stripped[i + 1]);
+    const nextLineMarkers = i + 1 < stripped.length ? lineMarkers[i + 1] : [];
     const isLastLine = i === stripped.length - 1;
     // No maskClaimed call: this runs before every other extractor (see
     // extractTokens), so claimed[i] is always empty here -- masking would
@@ -634,7 +664,8 @@ function extractNumberedItemTokens(text, claimed) {
     markers.forEach((m, idx) => {
       const hasNextOnLine = idx + 1 < markers.length;
       const end = hasNextOnLine ? markers[idx + 1].index : stripped[i].length;
-      if (!hasNextOnLine && !nextLineStartsWithMarker && !isLastLine) return;
+      const nextLineContinues = nextLineMarkers.some((nm) => Number(nm[1]) > Number(m[1]));
+      if (!hasNextOnLine && !nextLineContinues && !isLastLine) return;
       const start = m.index + m[0].length;
       const value = stripped[i].slice(start, end).trim();
       if (!value) return;

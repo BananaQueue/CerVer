@@ -440,6 +440,28 @@ test('a numbered item containing an ALL-CAPS run is captured whole, not split by
   assert.deepEqual(items, [['9', 'DENR REGIONAL DIRECTOR'], ['10', 'Someone Else']]);
 });
 
+// Real regression, 2026-09-09 (test/fixtures/pages-special-order-383/1-genuine.jpg):
+// a two-column layout whose columns have different lengths (left: 1-10,
+// right: 11-18) puts the shorter column's LAST item (18) on the same row
+// as the longer column's item 8, with no same-line neighbor of its own.
+// The next physical line starts with "9." (the left column continuing) --
+// a marker, but for a SMALLER number, not a real continuation of 18. This
+// produced a false "added" material finding on a genuine photo: item 18
+// was wrongly trusted, and the record's own #18 is never extracted at all
+// (see extractNumberedItemTokens's own comment on that separate limit), so
+// the photo-only token had no record counterpart to match.
+test('a numbered item is not falsely bounded by a next-line marker that belongs to a different, unrelated column', () => {
+  const t = extractTokens(
+    '8. John Nichol D. Parong 18. Van Kenji R. Maglaque\n'
+    + '9. Darwin Karl B. Pua',
+  );
+  const items = t.filter((x) => x.cls === 'numberedItem').map((x) => [x.number, x.value]);
+  // 8 is bounded by 18 on the same line; 9 is bounded by being the text's
+  // last line. 18 itself is the one that must NOT appear -- its only
+  // possible bound is the next line's "9.", a smaller number.
+  assert.deepEqual(items, [['8', 'John Nichol D. Parong'], ['9', 'Darwin Karl B. Pua']]);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [
