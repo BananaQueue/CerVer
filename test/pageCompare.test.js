@@ -1461,3 +1461,55 @@ test('an amount with every digit misread as a lookalike letter is forgiven, not 
   const r = compare(allLookalike, auth);
   assert.deepEqual(materials(r), [], `expected no material findings, got ${JSON.stringify(materials(r))}`);
 });
+
+const SIGNER_LINES = [
+  'MS. MA. ISABEL O. PEREZ-MAMARADLO',
+  'Supervising Environmental Management Specialist,',
+  'Chief, Environmental Impact Assessment Section',
+  'In-Charge, Office of the Regional Director',
+];
+
+test('a matching signatory title (minor OCR noise) is not a finding', () => {
+  const auth = [...SIGNER_LINES].join('\n');
+  const ocr = [
+    'MS. MA. ISABEL O. PEREZ-MAMARADLO',
+    'Supervising Environmental Management Speciaiist,', // one noisy letter
+    'Chief, Environmental Impact Assessment Section',
+    'In-Charge, Office of the Regional Director',
+  ].join('\n');
+  const r = compare(ocr, auth);
+  assert.deepEqual(materials(r).filter((f) => f.cls === 'signatoryTitle'), []);
+});
+
+// The real case, 2026-09-09: a genuine altered sheet kept the signer's
+// name and replaced the entire title with a bare "Regional Director".
+// Padded past THRESHOLDS.minWords/samePageMin with shared body text on
+// both sides -- otherwise compare() never reaches token comparison at
+// all (page_differs or image_unreadable fire first on text this short).
+test('a genuinely replaced signatory title is material', () => {
+  const auth = `${PAD} ${PAD}\n${[...SIGNER_LINES].join('\n')}`;
+  const ocr = `${PAD} ${PAD}\nMS. MA. ISABEL O. PEREZ-MAMARADLO\nRegional Director`;
+  const r = compare(ocr, auth);
+  const f = materials(r).find((x) => x.cls === 'signatoryTitle');
+  assert.ok(f, `expected a signatoryTitle finding, got ${JSON.stringify(materials(r))}`);
+  assert.equal(f.reason, 'text');
+  assert.equal(f.found, 'Regional Director');
+});
+
+test('record has a signatory title, photo has none -- tolerant, not material', () => {
+  const auth = `${PAD} ${PAD}\n${[...SIGNER_LINES].join('\n')}`;
+  const ocr = `${PAD} ${PAD}`;
+  const r = compare(ocr, auth);
+  assert.deepEqual(materials(r).filter((f) => f.cls === 'signatoryTitle'), []);
+  const tol = r.findings.find((f) => f.cls === 'signatoryTitle');
+  assert.ok(tol, `expected a tolerant signatoryTitle finding, got ${JSON.stringify(r.findings)}`);
+  assert.equal(tol.severity, 'tolerant');
+  assert.equal(tol.reason, 'missing');
+});
+
+test('photo has a signatory title, record has none -- no finding either way', () => {
+  const auth = 'Some unrelated line with no ALL-CAPS name in it at all here.';
+  const ocr = 'MS. MA. ISABEL O. PEREZ-MAMARADLO\nRegional Director';
+  const r = compare(ocr, auth);
+  assert.deepEqual(r.findings.filter((f) => f.cls === 'signatoryTitle'), []);
+});

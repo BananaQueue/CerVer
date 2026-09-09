@@ -887,7 +887,7 @@ function keyFor(cls, value) {
   // "Category B" photographed as "Category 8", which only this order
   // forgives.
   const foldedCase = foldGlyphs(collapsed).toLowerCase();
-  if (cls === 'name' || cls === 'field' || cls === 'listItem' || cls === 'numberedItem') return foldLetterNoise(foldedCase);
+  if (cls === 'name' || cls === 'field' || cls === 'listItem' || cls === 'numberedItem' || cls === 'signatoryTitle') return foldLetterNoise(foldedCase);
   const key = foldedCase.replace(/^(?:php|p)\s?/, '₱');
   // Reference only: fold the same hyphen-lookalikes REFERENCE_SEP already
   // tolerates at extraction to a canonical '-', so a misread separator
@@ -995,6 +995,45 @@ function compareNumberedItems(authTokens, ocrTokens) {
   }
 
   return { findings, suppressed };
+}
+
+// PROVISIONAL -- not yet measured against real photos, see design doc §5.
+// The real case this exists for (a 4-line title collapsed to 2 words)
+// measures at ~0.22; this sits with wide margin above it and below where
+// ordinary OCR noise on a genuine title is expected to land. Task 3 of
+// docs/superpowers/plans/2026-09-09-signatory-title-comparison.md replaces
+// this with a real measured value.
+const SIGNATORY_TITLE_SIMILARITY_FLOOR = 0.7;
+
+// signatoryTitle is identified by being the document's one signature-block
+// title, not a repeatable key -- same reasoning as compareNumberedItems,
+// see docs/superpowers/specs/2026-09-09-signatory-title-comparison-design.md
+// §4. A dedicated pass because there is no positional/numeric identity to
+// pair on, and because the whole point is comparing free prose tolerantly
+// -- exactly what the generic key-based passes are not built for.
+function compareSignatoryTitle(authTokens, ocrTokens) {
+  const authTok = authTokens.find((t) => t.cls === 'signatoryTitle');
+  const ocrTok = ocrTokens.find((t) => t.cls === 'signatoryTitle');
+  if (!authTok) return { findings: [], suppressed: 0 };
+  if (!ocrTok) {
+    return {
+      findings: [{
+        severity: 'tolerant', cls: 'signatoryTitle', line: authTok.line,
+        expected: authTok.value, found: null, reason: 'missing',
+      }],
+      suppressed: 1,
+    };
+  }
+  const a = keyFor('signatoryTitle', authTok.value).split(' ');
+  const o = keyFor('signatoryTitle', ocrTok.value).split(' ');
+  if (similarity(a, o) >= SIGNATORY_TITLE_SIMILARITY_FLOOR) return { findings: [], suppressed: 0 };
+  return {
+    findings: [{
+      severity: 'material', cls: 'signatoryTitle', line: authTok.line,
+      expected: authTok.value, found: ocrTok.value, reason: 'text',
+    }],
+    suppressed: 0,
+  };
 }
 
 function indexByKey(tokens) {
@@ -1140,6 +1179,10 @@ export function compare(ocrText, authText) {
   const numbered = compareNumberedItems(authTokens, ocrTokens);
   findings.push(...numbered.findings);
   suppressed += numbered.suppressed;
+
+  const signatoryTitle = compareSignatoryTitle(authTokens, ocrTokens);
+  findings.push(...signatoryTitle.findings);
+  suppressed += signatoryTitle.suppressed;
 
   // Word-level differences not accounted for by any token finding are the
   // ordinary noise of reading paper. Counted, shown, not itemised as findings.
