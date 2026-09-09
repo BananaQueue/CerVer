@@ -8,6 +8,7 @@
 // and what the authoritative page actually says.
 
 import { coverSourceRect } from '/coverRect.js';
+import { assessCaptureQuality } from '/captureQuality.js';
 
 const resultEl = document.getElementById('result');
 
@@ -726,9 +727,7 @@ function renderPageResult(data) {
     // so a handler bound during a genuine, feature-on render cannot survive
     // to fire against a *later* unverified or feature-off render's stale
     // `data`.
-    imgEl.onchange = async () => {
-      const file = imgEl.files[0];
-      if (!file) return;
+    const uploadPhoto = async (file) => {
       const out = document.getElementById('ocrOut');
       out.innerHTML = '<p class="note" style="margin-top:0.7rem">Reading the photo…</p>';
       const fd = new FormData();
@@ -742,6 +741,26 @@ function renderPageResult(data) {
         out.innerHTML = '<p class="note" style="margin-top:0.7rem">Couldn’t reach the service.</p>';
       }
       imgEl.value = '';
+    };
+
+    imgEl.onchange = async () => {
+      const file = imgEl.files[0];
+      if (!file) return;
+      // Fail open: a decode error, an unsupported canvas, anything at all
+      // here must never block the existing upload path -- this check is
+      // strictly additive.
+      const quality = await assessFileQuality(file).catch(() => null);
+      if (quality && (quality.blurry || quality.exposure)) {
+        const out = document.getElementById('ocrOut');
+        renderQualityWarning(
+          out,
+          quality,
+          () => uploadPhoto(file),
+          () => { imgEl.value = ''; imgEl.click(); }
+        );
+        return;
+      }
+      await uploadPhoto(file);
     };
   } else {
     imgEl.onchange = null;
@@ -762,6 +781,54 @@ function renderPageResult(data) {
 // never a wrong finding -- styling is downstream of a finding that already
 // exists (spec 2026-08-17 §2).
 const BOX_CONFIDENCE_FLOOR = 0.5;
+
+// Downscaled to a fixed width so blurVariance's threshold (tuned for this
+// exact size, see captureQuality.js) stays meaningful across different
+// phone camera resolutions.
+const QUALITY_SAMPLE_WIDTH = 500;
+
+async function assessFileQuality(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const w = QUALITY_SAMPLE_WIDTH;
+    const h = Math.max(1, Math.round(img.naturalHeight * (w / img.naturalWidth)));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const gray = new Uint8ClampedArray(w * h);
+    for (let i = 0; i < w * h; i++) {
+      gray[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) | 0;
+    }
+    return assessCaptureQuality(gray, w, h);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Advisory only -- both buttons lead somewhere, neither is a dead end.
+// Renders into the same #ocrOut the upload flow itself uses, so a retake
+// (which re-triggers the picker) naturally replaces this with the next
+// photo's own report once one comes back.
+function renderQualityWarning(out, quality, onContinue, onRetake) {
+  const reasons = [];
+  if (quality.blurry) reasons.push('blurry');
+  if (quality.exposure === 'dark') reasons.push('too dark');
+  if (quality.exposure === 'bright') reasons.push('overexposed');
+  out.innerHTML = `
+    <div class="note" style="margin-top:0.7rem">
+      <p>This photo looks ${esc(reasons.join(' and '))}. You can retake it, or continue anyway.</p>
+      <button class="btn btn-ghost" type="button" id="qualityRetake">Retake</button>
+      <button class="btn btn-primary" type="button" id="qualityContinue">Continue anyway</button>
+    </div>`;
+  document.getElementById('qualityRetake')?.addEventListener('click', onRetake);
+  document.getElementById('qualityContinue')?.addEventListener('click', onContinue);
+}
 
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
