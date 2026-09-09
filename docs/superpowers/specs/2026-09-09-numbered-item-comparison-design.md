@@ -1,7 +1,23 @@
 # Page Image OCR — Numbered-Item Comparison — Design
 
 **Date:** 2026-09-09
-**Status:** Approved design, pre-implementation
+**Status:** Implemented and verified against real photos (2026-09-09).
+Both real name substitutions are caught cleanly
+(`1-altered-b.jpg`, `1-altered-d.jpg`); the misspelling on
+`1-altered.jpg` is caught too. The removal-only alterations
+(`1-altered.jpg`'s isolated item 9, `1-altered-c.jpg`'s dropped last
+item) remain uncaught, exactly the accepted §5 limit. The bounding
+rule itself needed two more rounds beyond what this design specified,
+both found and fixed only after checking real photos, not reasoning
+alone: a next-line marker now bounds an item when SOME marker on that
+line has a strictly greater number (not merely "a marker is present,"
+which false-positived on a genuine photo whose two columns have
+different lengths, and not "checked on the first marker only" or "the
+exact successor," each of which broke a different genuine case — see
+`extractNumberedItemTokens`'s own comment for the full trail). Both
+completely different real documents (`test/fixtures/pages/`'s wrapped
+legal clauses, `test/fixtures/pages-special-order/`'s hyphen-bulleted
+list) show zero behavior change.
 **Extends:** `2026-08-13-page-image-ocr-design.md`, `2026-08-27-list-item-comparison-design.md`
 
 ## 1. Problem
