@@ -677,6 +677,73 @@ test('a listItem value differing only by a classic letter-run confusion (rn for 
   assert.deepEqual(r.findings, []);
 });
 
+// Real shape, sealed/R1-2026-020780.pdf: a two-column numbered personnel
+// list. Deliberately 4 items, not the document's real 18 -- #8/#9/#10 are
+// each bounded by the marker that follows them; #11 is left unbounded on
+// purpose (followed by ordinary prose, not the text's last line), mirroring
+// the real document's own last-item gap (design doc §5) so no test here
+// accidentally depends on an item this design cannot see.
+const NUMBERED_AUTH = [
+  'RESOURCE PERSONS:',
+  '8. John Nichol D. Parong',
+  '9. Maria Fernando Cruz',
+  '10. Darwin Karl B. Pua',
+  '11. John Ruskhin P. Salayon',
+  'The identified personnel are expected to participate during the event '
+    + 'and perform necessary support functions for the Summit.',
+].join('\n');
+
+test('a numberedItem value differing only by a classic letter-run confusion (rn for m) is not reported at all', () => {
+  const r = compare(NUMBERED_AUTH.replace('Fernando', 'Femando'), NUMBERED_AUTH);
+  assert.deepEqual(materials(r).filter((f) => f.cls === 'numberedItem'), []);
+});
+
+// The case this whole design exists for: a genuine substitution at a
+// stable number. Real cases, 2026-09-09 (sealed/R1-2026-020780.pdf):
+// "Lawrence" -> "Laurence", "Nichol" -> "Nicole" -- different people, not
+// OCR noise.
+test('a numberedItem value that genuinely differs at the same number is material', () => {
+  const ocr = NUMBERED_AUTH.replace('Darwin Karl B. Pua', 'Someone Else Entirely');
+  const r = compare(ocr, NUMBERED_AUTH);
+  const f = materials(r).find((x) => x.cls === 'numberedItem');
+  assert.ok(f, 'expected a material numberedItem finding');
+  assert.equal(f.expected, 'Darwin Karl B. Pua');
+  assert.equal(f.found, 'Someone Else Entirely');
+  assert.equal(f.reason, 'text');
+});
+
+// Trailing OCR noise, the same shape isWrapPrefix already forgives for
+// name/field/listItem, forgiven here too via the same helper.
+test('a numberedItem value with trailing OCR noise, where the record value is a clean prefix, is not reported', () => {
+  const ocr = NUMBERED_AUTH.replace('10. Darwin Karl B. Pua', '10. Darwin Karl B. Pua 4');
+  const r = compare(ocr, NUMBERED_AUTH);
+  assert.deepEqual(materials(r).filter((f) => f.cls === 'numberedItem'), []);
+});
+
+// Real genuine photos demonstrated ordinary OCR can drop list content
+// under normal capture conditions (see the listItem design doc) --
+// treating an absence as material would flag a normal bad-angle photo as
+// tampered. The same reasoning applies here.
+test('a numbered item missing from the photo is tolerant, never material', () => {
+  const ocr = NUMBERED_AUTH.replace('10. Darwin Karl B. Pua\n', '');
+  const r = compare(ocr, NUMBERED_AUTH);
+  assert.deepEqual(materials(r).filter((f) => f.cls === 'numberedItem'), []);
+  const tolerant = r.findings.filter((f) => f.severity === 'tolerant' && f.cls === 'numberedItem');
+  assert.equal(tolerant.length, 1);
+  assert.equal(tolerant[0].expected, 'Darwin Karl B. Pua');
+});
+
+// Mirrors listItem's and every STRICT class's existing added-pass.
+test('an added numbered item with no record counterpart is reported as material', () => {
+  const ocr = `${NUMBERED_AUTH}\n11. Extra Person Name`;
+  const r = compare(ocr, NUMBERED_AUTH);
+  const found = materials(r).filter((f) => f.cls === 'numberedItem');
+  assert.deepEqual(found, [{
+    severity: 'material', cls: 'numberedItem', line: null,
+    expected: null, found: 'Extra Person Name', reason: 'added',
+  }]);
+});
+
 // The one alteration this whole design exists to catch: a name appended to
 // the list with no record counterpart at all (real case, 2026-08-27,
 // test/fixtures/pages-special-order/2-altered.jpg -- "Darwin Karl Pua").

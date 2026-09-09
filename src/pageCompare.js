@@ -809,7 +809,7 @@ function keyFor(cls, value) {
   // "Category B" photographed as "Category 8", which only this order
   // forgives.
   const foldedCase = foldGlyphs(collapsed).toLowerCase();
-  if (cls === 'name' || cls === 'field' || cls === 'listItem') return foldLetterNoise(foldedCase);
+  if (cls === 'name' || cls === 'field' || cls === 'listItem' || cls === 'numberedItem') return foldLetterNoise(foldedCase);
   const key = foldedCase.replace(/^(?:php|p)\s?/, '₱');
   // Reference only: fold the same hyphen-lookalikes REFERENCE_SEP already
   // tolerates at extraction to a canonical '-', so a misread separator
@@ -872,6 +872,53 @@ function isWrapPrefix(a, b) {
   return shorter.length > 0 && shorter.every((w, i) => longer[i] === w);
 }
 
+// numberedItem is identified by its NUMBER, not a fold of its value --
+// every other class's identity IS its folded value, which is what
+// compare()'s generic record<->photo passes key on. Forcing numberedItem
+// through that mechanism would mean "same key" stops meaning "same
+// content" for this one class, so it gets its own dedicated pass instead;
+// compare() excludes numberedItem tokens from both generic passes (search
+// for "cls === 'numberedItem'" there). See
+// docs/superpowers/specs/2026-09-09-numbered-item-comparison-design.md §4.
+function compareNumberedItems(authTokens, ocrTokens) {
+  const authByNum = new Map();
+  for (const t of authTokens) if (t.cls === 'numberedItem') authByNum.set(t.number, t);
+  const ocrByNum = new Map();
+  for (const t of ocrTokens) if (t.cls === 'numberedItem') ocrByNum.set(t.number, t);
+
+  const findings = [];
+  let suppressed = 0;
+
+  for (const [num, authTok] of authByNum) {
+    const ocrTok = ocrByNum.get(num);
+    if (!ocrTok) {
+      suppressed++;
+      findings.push({
+        severity: 'tolerant', cls: 'numberedItem', line: authTok.line,
+        expected: authTok.value, found: null, reason: 'missing',
+      });
+      continue;
+    }
+    const a = keyFor('numberedItem', authTok.value);
+    const o = keyFor('numberedItem', ocrTok.value);
+    if (a === o || isWrapPrefix(a, o)) continue;
+    findings.push({
+      severity: 'material', cls: 'numberedItem', line: authTok.line,
+      expected: authTok.value, found: ocrTok.value, reason: 'text',
+    });
+  }
+
+  for (const [num, ocrTok] of ocrByNum) {
+    if (authByNum.has(num)) continue;
+    findings.push({
+      severity: 'material', cls: 'numberedItem', line: null,
+      expected: null, found: ocrTok.value, reason: 'added',
+    });
+  }
+
+  return { findings, suppressed };
+}
+
 function indexByKey(tokens) {
   const m = new Map();
   for (const t of tokens) {
@@ -919,6 +966,7 @@ export function compare(ocrText, authText) {
 
   // Record -> photo. Did every value survive?
   for (const t of authTokens) {
+    if (t.cls === 'numberedItem') continue; // handled by compareNumberedItems below
     const key = keyFor(t.cls, t.value);
     const hit = ocrByKey.get(key);
     if (hit && hit.length) {
@@ -994,6 +1042,7 @@ export function compare(ocrText, authText) {
   // testing presence alone (`.has`) let a duplicated amount hide behind the
   // single genuine occurrence and produce no finding at all.
   for (const o of ocrTokens) {
+    if (o.cls === 'numberedItem') continue; // handled by compareNumberedItems below
     if (!STRICT.has(o.cls) && o.cls !== 'listItem') continue;
     if (consumedNear.has(o)) continue; // already paired above
     const key = keyFor(o.cls, o.value);
@@ -1007,6 +1056,10 @@ export function compare(ocrText, authText) {
       expected: null, found: o.value, reason: 'added',
     });
   }
+
+  const numbered = compareNumberedItems(authTokens, ocrTokens);
+  findings.push(...numbered.findings);
+  suppressed += numbered.suppressed;
 
   // Word-level differences not accounted for by any token finding are the
   // ordinary noise of reading paper. Counted, shown, not itemised as findings.
