@@ -565,6 +565,29 @@ function extractFieldTokens(text, claimed, knownLabels) {
   return out;
 }
 
+// A signatory's printed name followed by an unstructured title/position
+// block -- see docs/superpowers/specs/2026-09-09-signatory-title-comparison-design.md.
+// Anchored on the LAST `name`-class token by line number (the signatory's
+// own printed name in both real documents checked in the design doc's §2)
+// -- an earlier ALL-CAPS run, like a SUBJECT line, must never be mistaken
+// for the anchor. Bounded by the first blank line after the anchor, or end
+// of text. Unlike every other extraction function in this file, this one
+// consumes already-extracted tokens (nameTokens) rather than deriving
+// everything from raw text alone -- it has to run after the TOKEN_PATTERNS
+// loop that produces them.
+function extractSignatoryTitleToken(rawLines, nameTokens) {
+  if (nameTokens.length === 0) return null;
+  const anchorLine = Math.max(...nameTokens.map((t) => t.line));
+  const titleLines = [];
+  for (let i = anchorLine; i < rawLines.length; i++) {
+    const line = stripFooter(rawLines[i]).trim();
+    if (line === '') break;
+    titleLines.push(line);
+  }
+  if (titleLines.length === 0) return null;
+  return { cls: 'signatoryTitle', value: titleLines.join(' '), line: anchorLine + 1 };
+}
+
 // The record's own set of field labels -- always clean, real PDF text.
 // Collected once per compare() call and handed to the photo-side
 // extraction (see extractTokens's opts.fieldLabels), so it can anchor on a
@@ -812,6 +835,10 @@ export function extractTokens(text, opts = {}) {
   // once every more specific class has already claimed its own span.
   out.push(...extractFieldTokens(text, claimed, opts.fieldLabels));
 
+  // Last of all -- needs the `name` tokens already produced above as its anchor.
+  const signatoryTitle = extractSignatoryTitleToken(rawLines, out.filter((t) => t.cls === 'name'));
+  if (signatoryTitle) out.push(signatoryTitle);
+
   return out.sort((a, b) => a.line - b.line);
 }
 
@@ -1018,6 +1045,7 @@ export function compare(ocrText, authText) {
   // Record -> photo. Did every value survive?
   for (const t of authTokens) {
     if (t.cls === 'numberedItem') continue; // handled by compareNumberedItems below
+    if (t.cls === 'signatoryTitle') continue; // handled by compareSignatoryTitle below (Task 2)
     const key = keyFor(t.cls, t.value);
     const hit = ocrByKey.get(key);
     if (hit && hit.length) {

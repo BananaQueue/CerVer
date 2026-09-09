@@ -128,6 +128,67 @@ test('extractTokens finds control numbers and citations', () => {
   assert.deepEqual(byClass(t, 'citation'), ['Section 12', 'Rule III']);
 });
 
+test('extractTokens finds a signatory title following the signer\'s printed name', () => {
+  const text = [
+    'MS. MA. ISABEL O. PEREZ-MAMARADLO',
+    'Supervising Environmental Management Specialist,',
+    'Chief, Environmental Impact Assessment Section',
+    'In-Charge, Office of the Regional Director',
+  ].join('\n');
+  const t = extractTokens(text);
+  assert.deepEqual(byClass(t, 'signatoryTitle'), [
+    'Supervising Environmental Management Specialist, Chief, Environmental Impact Assessment Section In-Charge, Office of the Regional Director',
+  ]);
+});
+
+test('extractTokens finds a single-line signatory title (a different real document shape)', () => {
+  const text = 'NOEL A. VILLANUEVA, CESO IV\nRegional Director';
+  const t = extractTokens(text);
+  assert.deepEqual(byClass(t, 'signatoryTitle'), ['Regional Director']);
+});
+
+test('a title block stops at the first blank line, not at end of text', () => {
+  const text = [
+    'MS. MA. ISABEL O. PEREZ-MAMARADLO',
+    'Regional Director',
+    '',
+    'Page 1 of 1',
+  ].join('\n');
+  const t = extractTokens(text);
+  assert.deepEqual(byClass(t, 'signatoryTitle'), ['Regional Director']);
+});
+
+test('a title block runs to end of text when no blank line follows', () => {
+  const text = 'MS. MA. ISABEL O. PEREZ-MAMARADLO\nRegional Director';
+  const t = extractTokens(text);
+  assert.deepEqual(byClass(t, 'signatoryTitle'), ['Regional Director']);
+});
+
+test('no name token means no signatory title, even with title-shaped prose present', () => {
+  const t = extractTokens('Supervising Environmental Management Specialist,\nChief, Environmental Impact Assessment Section');
+  assert.deepEqual(byClass(t, 'signatoryTitle'), []);
+});
+
+test('a name token with nothing but a blank line after it extracts no signatory title', () => {
+  const t = extractTokens('MS. MA. ISABEL O. PEREZ-MAMARADLO\n\nPage 1 of 1');
+  assert.deepEqual(byClass(t, 'signatoryTitle'), []);
+});
+
+// Real regression risk: the SUBJECT line and other ALL-CAPS prose earlier
+// in a document also match the `name` pattern. The anchor must be the
+// LAST such token, not the first, or a signatory title would be extracted
+// starting from the wrong place entirely.
+test('the signatory anchor is the LAST name token, not an earlier ALL-CAPS run', () => {
+  const text = [
+    'SUBJECT : AUTHORIZING THE ATTENDANCE OF EMB-I PERSONNEL',
+    'Some body text about the order goes here for context.',
+    'MS. MA. ISABEL O. PEREZ-MAMARADLO',
+    'Regional Director',
+  ].join('\n');
+  const t = extractTokens(text);
+  assert.deepEqual(byClass(t, 'signatoryTitle'), ['Regional Director']);
+});
+
 // Real case, 2026-08-24 calibration (test/fixtures/pages/1-genuine-b.jpg):
 // Tesseract read the body's "Control No. R1-2026-010734" as "Rt-2026-010734"
 // -- the digit right after R misread as a lookalike letter. The old pattern
