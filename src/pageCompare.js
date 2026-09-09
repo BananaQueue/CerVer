@@ -374,6 +374,26 @@ function hasRealDigit(match) {
   return /\d/.test(match) || /[,.]/.test(match);
 }
 
+// A citation's own analogue to hasRealDigit, applied only to the 'added'
+// pass (compare(), below) -- not to extraction. CITATION_ANCHOR deliberately
+// accepts a lone "|" as sufficient evidence to extract a token AT ALL, so
+// that "Rule III" misread as "Rule |||" still folds against an EXISTING
+// record citation (see the "Rule ||| (lookalike-only) is not a finding"
+// test) -- removing that at extraction would break the fold path along with
+// the phantom. But when a citation token has NO record counterpart to fold
+// against, the same lone "|" has nothing behind it at all. Real case,
+// 2026-09-09: a live photo read a stray artifact right after an ordinary,
+// non-citation use of the word "Section" ("...Assessment Section", a job
+// title) as "Section |" -- material "document altered" finding on a
+// genuine page. A citation is trustworthy evidence of an addition only when
+// it carries a real digit, or is a genuine Roman-numeral spelling (never
+// built from DIGITISH lookalikes alone, since [IVXLC]+ contains no digit
+// lookalikes outside actual Roman-numeral letters).
+function citationHasRealEvidence(value) {
+  const numeral = String(value ?? '').replace(/^(?:Section|Sec\.|Rule|Article|Art\.)\s+/i, '');
+  return /^[IVXLC]+$/i.test(numeral) || /\d/.test(numeral);
+}
+
 // The one place that decides what counts as a money token, for both record
 // and photo text. `claimed` is the same per-line array extractTokens uses for
 // every other class, so money masks correctly relative to them in both
@@ -1076,6 +1096,7 @@ export function compare(ocrText, authText) {
     if (o.cls === 'numberedItem') continue; // handled by compareNumberedItems below
     if (!STRICT.has(o.cls) && o.cls !== 'listItem') continue;
     if (consumedNear.has(o)) continue; // already paired above
+    if (o.cls === 'citation' && !citationHasRealEvidence(o.value)) continue;
     const key = keyFor(o.cls, o.value);
     const hit = authByKey.get(key);
     if (hit && hit.length) {

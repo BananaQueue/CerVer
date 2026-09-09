@@ -1273,6 +1273,41 @@ test('citation numeral widening does not fabricate citations from ordinary capit
   assert.deepEqual(byClass(t, 'citation'), []);
 });
 
+// Real case, 2026-09-09: a live phone photo of a real document read a stray
+// OCR artifact right after an ORDINARY (non-citation) use of the word
+// "Section" -- "...Environmental Impact Assessment Section", a job-title
+// noun, not a legal citation -- as a lone "|". CITATION_ANCHOR accepts a
+// lone pipe as sufficient evidence by design (so "Rule III" misread as
+// "Rule |||" still folds against an EXISTING record citation -- see that
+// test above), so extraction still produced a "Section |" token on the
+// photo side. The record has no citation anywhere near that job title for
+// it to fold against, so it fell through to the 'added' pass and surfaced
+// as a material "document altered" finding on a genuine, untampered page.
+// Extraction cannot simply refuse a real-digit-free numeral (that would
+// also refuse "Rule |||" and break the fold case above); the guard has to
+// live in the 'added' pass, which only ever fires when there was no record
+// counterpart to fold against in the first place.
+test('a stray pipe after an unrelated use of "Section" is not a phantom added citation', () => {
+  const auth = 'Chief, Environmental Impact Assessment Section, In-Charge of the '
+    + 'Regional Director for this office effective as scheduled this year under '
+    + 'the applicable guidelines currently in force for this case.';
+  const r = compare(auth.replace('Section,', 'Section |,'), auth);
+  assert.deepEqual(materials(r), []);
+});
+
+// The same guard must not swallow a genuinely material added citation --
+// only ones built from zero real evidence (no real digit, not a valid
+// Roman-numeral spelling) are suppressed.
+test('a genuinely added citation with real digits is still material', () => {
+  const auth = 'Chief, Environmental Impact Assessment Section, In-Charge of the '
+    + 'Regional Director for this office effective as scheduled this year under '
+    + 'the applicable guidelines currently in force for this case.';
+  const r = compare(auth.replace('Section,', 'Section 99,'), auth);
+  const f = materials(r).find((x) => x.cls === 'citation');
+  assert.ok(f, 'expected a citation finding');
+  assert.equal(f.found, 'Section 99');
+});
+
 test('a wholly different page is page_differs and reports no token findings', () => {
   // Long enough to clear THRESHOLDS.minWords on its own -- the brief's original
   // one-sentence fixture (11 words) fell below minWords (20) and was caught by
