@@ -570,18 +570,65 @@ function extractFieldTokens(text, claimed, knownLabels) {
 // Anchored on the LAST `name`-class token by line number (the signatory's
 // own printed name in both real documents checked in the design doc's §2)
 // -- an earlier ALL-CAPS run, like a SUBJECT line, must never be mistaken
-// for the anchor. Bounded by the first blank line after the anchor, or end
-// of text. Unlike every other extraction function in this file, this one
-// consumes already-extracted tokens (nameTokens) rather than deriving
-// everything from raw text alone -- it has to run after the TOKEN_PATTERNS
-// loop that produces them.
-function extractSignatoryTitleToken(rawLines, nameTokens) {
+// for the anchor. Unlike every other extraction function in this file,
+// this one consumes already-extracted tokens (nameTokens) rather than
+// deriving everything from raw text alone -- it has to run after the
+// TOKEN_PATTERNS loop that produces them.
+//
+// Bounded by whichever comes first: a blank line, a line containing a real
+// digit, or a line something else already claimed -- NOT a blank line
+// alone, the design doc's original proposal. Real calibration, 2026-09-09,
+// found two distinct failures that needed each of the other two guards:
+//
+// 1. Neither real document's own clean RECORD text has a literal blank
+//    line between the title and what follows it -- R1-2026-020780's
+//    record text runs straight from "In-Charge, Office of the Regional
+//    Director" into a bare "R1-2026-020780" control-number line, and
+//    R1-2026-010734's runs into "Page 3 of 3" then an address line with a
+//    zip code. A blank-line-only rule swallowed all of that into the
+//    "title", corrupting every genuine photo into a false material
+//    finding. What every one of those trailing lines shares, and no
+//    genuine title line has: a real digit.
+// 2. The anchor itself (the last `name` token) can false-fire on an
+//    ALL-CAPS document HEADING when a page carries no real signature at
+//    all -- confirmed on R1-2026-010734's own page 1 ("ENVIRONMENTAL
+//    COMPLIANCE CERTIFICATE" is itself a `name`-shaped run, and that page
+//    has no signature block). The digit guard alone doesn't stop this,
+//    since the field lines that follow ("Proponent : ...", "Location :
+//    ...") carry no digits either -- but they ARE already claimed by
+//    extractFieldTokens, which runs before this. Stopping at the first
+//    already-claimed line rejects the false anchor immediately (the very
+//    next line is a claimed field), producing no token at all rather than
+//    a phantom one built from unrelated field values.
+function extractSignatoryTitleToken(rawLines, nameTokens, claimed) {
   if (nameTokens.length === 0) return null;
   const anchorLine = Math.max(...nameTokens.map((t) => t.line));
   const titleLines = [];
   for (let i = anchorLine; i < rawLines.length; i++) {
+    if (claimed[i] && claimed[i].length > 0) break;
     const line = stripFooter(rawLines[i]).trim();
     if (line === '') break;
+    // A real title line always has at least one genuine word; a stray
+    // image artifact read as a "line" (a signature squiggle, a print
+    // mark) never does. Real case, 2026-09-09: OCR read the blank space
+    // below a one-line title ("Regional Director") as several short
+    // garbage lines ("F -", "=", "ae aoa") before reaching the next real
+    // content -- none of them digits or claimed by anything, so nothing
+    // else here stopped them. Diluting a short title with that much noise
+    // sank its similarity to the record well below any usable floor on an
+    // untouched, genuine photo.
+    //
+    // A digit-bearing line needs TWO such words, not one, before it's
+    // trusted as title content rather than page furniture -- a genuine
+    // page-number/control-number line ("Page 3 of 3", "R1-2026-020780")
+    // carries at most one real word ("Page") and must still be rejected,
+    // while real title content that merely picked up a stray OCR digit
+    // ("4 Regional Director 4" -- real case, 2026-09-09, the actual
+    // altered photo this feature exists to catch) has two and must
+    // survive. One word alone can't tell those apart; two reliably does
+    // on every real case checked so far.
+    const realWords = (line.match(/[a-zA-Z]{3,}/g) || []).length;
+    if (realWords < (/\d/.test(line) ? 2 : 1)) break;
     titleLines.push(line);
   }
   if (titleLines.length === 0) return null;
@@ -835,8 +882,9 @@ export function extractTokens(text, opts = {}) {
   // once every more specific class has already claimed its own span.
   out.push(...extractFieldTokens(text, claimed, opts.fieldLabels));
 
-  // Last of all -- needs the `name` tokens already produced above as its anchor.
-  const signatoryTitle = extractSignatoryTitleToken(rawLines, out.filter((t) => t.cls === 'name'));
+  // Last of all -- needs the `name` tokens already produced above as its
+  // anchor, and `claimed` to know what every earlier class already owns.
+  const signatoryTitle = extractSignatoryTitleToken(rawLines, out.filter((t) => t.cls === 'name'), claimed);
   if (signatoryTitle) out.push(signatoryTitle);
 
   return out.sort((a, b) => a.line - b.line);
@@ -997,12 +1045,14 @@ function compareNumberedItems(authTokens, ocrTokens) {
   return { findings, suppressed };
 }
 
-// PROVISIONAL -- not yet measured against real photos, see design doc §5.
-// The real case this exists for (a 4-line title collapsed to 2 words)
-// measures at ~0.22; this sits with wide margin above it and below where
-// ordinary OCR noise on a genuine title is expected to land. Task 3 of
-// docs/superpowers/plans/2026-09-09-signatory-title-comparison.md replaces
-// this with a real measured value.
+// MEASURED (2026-09-09, real photo calibration -- 12 real photos across two
+// structurally different documents, docs/superpowers/plans/
+// 2026-09-09-signatory-title-comparison.md Task 3). Genuine photos (10, both
+// documents) clustered at similarity 0.811-1.000; the two real title-
+// replacement photos (the actual altered document that motivated this
+// feature) measured 0.211 and 0.222. This sits with wide margin on both
+// sides of that real gap -- the same measured-not-guessed practice as
+// MIN_CONFIDENCE (src/verifyPageImage.js) and THRESHOLDS below.
 const SIGNATORY_TITLE_SIMILARITY_FLOOR = 0.7;
 
 // signatoryTitle is identified by being the document's one signature-block

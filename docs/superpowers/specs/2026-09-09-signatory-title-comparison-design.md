@@ -1,11 +1,26 @@
 # Page Image OCR — Signatory Title Comparison — Design
 
 **Date:** 2026-09-09
-**Status:** Design approved, not yet implemented. Extraction's boundary
-rule is a starting proposal, not yet calibrated against real photos — see
-§5. Expect it to need revision during implementation, the same way
-`numberedItem`'s bounding rule needed three real rounds beyond its own
-first draft (`2026-09-09-numbered-item-comparison-design.md`).
+**Status:** Implemented and verified against 12 real photos across two
+structurally different documents (2026-09-09). The blank-line boundary
+this design originally proposed did not survive contact with real record
+text at all — neither document's clean PDF text has a literal blank line
+between the title and what follows it, so it swallowed page furniture
+(a bare control number, a "Page N of M" line, an address) into every
+title on both sides, turning every genuine photo into a false material
+finding. Fixed by three combined stopping conditions instead of one: a
+blank line, a line something else already claimed (this also fixed a
+second failure — an ALL-CAPS document heading with no real signature on
+that page, confirmed on `R1-2026-010734`'s own page 1, was false-firing
+as the anchor), and a line without enough real-word content relative to
+any digit it carries (a genuine page-number line has at most one real
+word and is rejected; real title text that merely picked up a stray OCR
+digit has two or more and survives — this exact shape is the real
+altered photo that motivated this design, "4 Regional Director 4"). Full
+trail in `extractSignatoryTitleToken`'s own comment
+(`src/pageCompare.js`). `SIGNATORY_TITLE_SIMILARITY_FLOOR` (0.7) is a
+measured value, not a guess: genuine photos clustered at 0.811-1.000,
+the two real altered photos at 0.211-0.222.
 **Extends:** `2026-08-13-page-image-ocr-design.md`,
 `2026-08-25-labeled-field-comparison-design.md`
 
