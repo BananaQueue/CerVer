@@ -375,6 +375,71 @@ test('a listItem token does not also become a name, money, date, duration, refer
   assert.deepEqual(byClass(t, 'name'), []);
 });
 
+// A numbered list entry, e.g. "9. Darwin Karl B. Pua". Unlike a hyphen
+// bullet, several items can share one physical OCR line -- this real
+// document's list prints in two side-by-side columns. See design doc
+// docs/superpowers/specs/2026-09-09-numbered-item-comparison-design.md §2, §3.
+test('a numbered list line is captured as a numberedItem token', () => {
+  const t = extractTokens('9. Darwin Karl B. Pua\n10. John Ruskhin P. Salayon');
+  const items = t.filter((x) => x.cls === 'numberedItem').map((x) => [x.number, x.value]);
+  assert.deepEqual(items, [['9', 'Darwin Karl B. Pua'], ['10', 'John Ruskhin P. Salayon']]);
+});
+
+// Real shape, 2026-09-09 (sealed/R1-2026-020780.pdf, two-column layout):
+// "Chester Lyndon S. Padilla 11. Mardave G. Nerveza" is items 1 and 11 on
+// one physical line. A naive "first marker per line" extraction would
+// swallow the second item's content into the first item's value.
+test('a line containing two numbered items (a two-column layout) splits into both', () => {
+  const t = extractTokens(
+    '1. Chester Lyndon S. Padilla 11. Mardave G. Nerveza\n'
+    + '2. Roderick F. Valdez 12. Melody V. Sabado',
+  );
+  const items = t.filter((x) => x.cls === 'numberedItem').map((x) => [x.number, x.value]);
+  assert.deepEqual(items, [
+    ['1', 'Chester Lyndon S. Padilla'], ['11', 'Mardave G. Nerveza'],
+    ['2', 'Roderick F. Valdez'], ['12', 'Melody V. Sabado'],
+  ]);
+});
+
+// Real regression risk, 2026-09-09: a completely different real document
+// (test/fixtures/pages/, legal clauses) has its own numbered list, but
+// each item wraps across two or three physical lines. Without the
+// bounding rule this line would be truncated to its first physical line
+// and compared against a genuine photo's own, differently-positioned
+// truncation -- a live false-positive risk on an already-shipped feature.
+test('a numbered item whose content runs to end of line with no bounding marker is not extracted (a wrapped continuation)', () => {
+  const t = extractTokens(
+    '3. Effluent shall conform to DENR Administrative Order 2016-08, Class C\n'
+    + 'inland water standards. Quarterly sampling shall be undertaken by a\n'
+    + 'DENR-recognized laboratory.',
+  );
+  assert.deepEqual(t.filter((x) => x.cls === 'numberedItem'), []);
+});
+
+test('a numbered item on the very last line of the text is extracted, even with nothing after it to bound it', () => {
+  const t = extractTokens('17. Edison A. Rabo\n18. Van Kenji R. Maglaque');
+  const items = t.filter((x) => x.cls === 'numberedItem').map((x) => [x.number, x.value]);
+  assert.deepEqual(items, [['17', 'Edison A. Rabo'], ['18', 'Van Kenji R. Maglaque']]);
+});
+
+// The accepted honest limit (design doc §5): this shape is indistinguishable,
+// locally, from the wrapped-clause case above, so it is not extracted --
+// not a photo-reading problem, a property of the text itself.
+test('a numbered item followed by ordinary prose, not another marker, and not the last line, is not extracted', () => {
+  const t = extractTokens('18. Van Kenji R. Maglaque\nServices rendered by permanent personnel shall be credited.');
+  assert.deepEqual(t.filter((x) => x.cls === 'numberedItem'), []);
+});
+
+// Mirrors listItem's own protection (design doc §3): claiming the whole
+// segment first stops 'name' from partially claiming an ALL-CAPS run
+// inside it, which would otherwise NUL-contaminate the remainder.
+test('a numbered item containing an ALL-CAPS run is captured whole, not split by the name pattern', () => {
+  const t = extractTokens('9. DENR REGIONAL DIRECTOR\n10. Someone Else');
+  assert.deepEqual(byClass(t, 'name'), []);
+  const items = t.filter((x) => x.cls === 'numberedItem').map((x) => [x.number, x.value]);
+  assert.deepEqual(items, [['9', 'DENR REGIONAL DIRECTOR'], ['10', 'Someone Else']]);
+});
+
 import { compare } from '../src/pageCompare.js';
 
 const AUTH = [

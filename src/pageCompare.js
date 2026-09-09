@@ -587,6 +587,64 @@ function collectFieldLabels(text) {
 // a digit; a future document whose items don't would need this revisited.
 const LIST_ITEM_LINE = /-\s+([A-Z0-9].*?)\s*$/;
 
+// A numbered list entry, e.g. "9. Darwin Karl B. Pua". Unlike a hyphen
+// bullet (see extractListItemTokens below), several items can share one
+// physical OCR line: this document's list prints in two side-by-side
+// columns ("Chester Lyndon S. Padilla 11. Mardave G. Nerveza" is items 1
+// and 11 on one line), so this splits a line on EVERY marker found, not
+// just the first. See
+// docs/superpowers/specs/2026-09-09-numbered-item-comparison-design.md.
+//
+// A segment is only trusted -- extracted at all -- when unambiguously
+// bounded: by another marker later on the same line, by the next physical
+// line itself starting with a marker, or by being the text's last line.
+// Real case, 2026-09-09: a completely different real document
+// (test/fixtures/pages/, legal clauses) has its own numbered list, but
+// each item wraps across two or three physical lines ("3. Effluent shall
+// conform to... / inland water standards..."). Without this bounding
+// rule, that document's clauses would be silently truncated to their
+// first physical line and compared against a genuine photo's own
+// (differently-positioned) truncation -- a live false-positive risk on an
+// already-shipped feature, not a hypothetical. Checked directly against
+// that document and all 3 of its real genuine photos: zero items
+// extracted, either side, with this rule in place.
+//
+// The cost, found the same way: a segment that legitimately ends a
+// document's own list, with ordinary prose (not another marker)
+// immediately following and not literally the page's last line, is ALSO
+// not trusted -- there is no local way to tell that apart from a wrapped
+// continuation. Accepted, documented gap, not an oversight -- see the
+// design doc's honest limits (§5).
+const NUMBERED_MARKER = /\b(\d{1,2})\.\s+/g;
+
+function extractNumberedItemTokens(text, claimed) {
+  const rawLines = String(text ?? '').split('\n');
+  const stripped = rawLines.map((raw) => stripFooter(raw));
+  const lineMarkers = stripped.map((line) => [...line.matchAll(NUMBERED_MARKER)]);
+  const out = [];
+  lineMarkers.forEach((markers, i) => {
+    if (markers.length === 0) return;
+    const nextLineStartsWithMarker = i + 1 < stripped.length
+      && /^\s*\d{1,2}\.\s+/.test(stripped[i + 1]);
+    const isLastLine = i === stripped.length - 1;
+    // No maskClaimed call: this runs before every other extractor (see
+    // extractTokens), so claimed[i] is always empty here -- masking would
+    // be a guaranteed no-op. If that ordering ever changes, this comment
+    // is the tripwire to come back and add it.
+    markers.forEach((m, idx) => {
+      const hasNextOnLine = idx + 1 < markers.length;
+      const end = hasNextOnLine ? markers[idx + 1].index : stripped[i].length;
+      if (!hasNextOnLine && !nextLineStartsWithMarker && !isLastLine) return;
+      const start = m.index + m[0].length;
+      const value = stripped[i].slice(start, end).trim();
+      if (!value) return;
+      claimed[i].push([m.index, end]);
+      out.push({ cls: 'numberedItem', number: m[1], value, line: i + 1 });
+    });
+  });
+  return out;
+}
+
 function extractListItemTokens(text, claimed) {
   const rawLines = String(text ?? '').split('\n');
   const stripped = rawLines.map((raw) => stripFooter(raw));
@@ -663,6 +721,11 @@ export function extractTokens(text, opts = {}) {
   // Runs before every other class -- see extractListItemTokens's own
   // comment for why a bulleted line must claim its whole span first.
   out.push(...extractListItemTokens(text, claimed));
+
+  // Same reasoning, same position -- see extractNumberedItemTokens's own
+  // comment for the bounding rule this needs that extractListItemTokens
+  // does not.
+  out.push(...extractNumberedItemTokens(text, claimed));
 
   // Money next, same position it held inside TOKEN_PATTERNS before it moved
   // out to get its own structural filter -- see extractMoneyTokens above.
