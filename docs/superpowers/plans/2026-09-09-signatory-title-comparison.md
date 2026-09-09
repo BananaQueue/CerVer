@@ -2,6 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Implemented 2026-09-09, all three tasks complete. Task 3's
+extraction boundary needed real revision, exactly as this plan's own
+Global Constraints anticipated — see the design doc's own updated Status
+for the full trail. One deliberate deviation from Task 3 Step 4 as
+written: rather than add a real-Tesseract-calling test into
+`test/pageCompare.test.js`, the calibration script was kept as a
+permanent, committed script (`scripts/calibrate-signatory-title.mjs`)
+instead — checking `test/ocr.test.js` and `test/verifyPageImage.test.js`
+first showed neither actually calls real OCR as part of `npm test` (both
+stub it); every real-photo check in this project already lives in a
+standalone script (`scripts/ocr-calibrate.mjs`), kept out of the fast
+suite since OCR is slow. Following that established convention instead
+of the plan's literal step.
+
 **Goal:** Extract and compare the free-text title/position block that follows a signatory's printed name, so a substitution there (the real case found 2026-09-09: a full title collapsed to a bare "Regional Director") is caught as a material finding instead of producing no finding at all.
 
 **Architecture:** A new `signatoryTitle` class in `src/pageCompare.js`, anchored on the last already-extracted `name`-class token (the signatory's printed name) and bounded by the first blank line after it. Extracted identically on both record and photo text via the same function `extractTokens` already calls for every other class. Compared by a dedicated pass (`compareSignatoryTitle`, mirroring `compareNumberedItems`) rather than the generic key-based passes, since there is at most one signatory per document — no repeatable key to pair on.
@@ -29,7 +43,7 @@
 - Produces: `extractSignatoryTitleToken(rawLines: string[], nameTokens: {cls, value, line}[]): {cls: 'signatoryTitle', value: string, line: number} | null` — a module-internal (not exported) function, exercised through `extractTokens`.
 - Consumes: nothing new — `stripFooter` (already in this file).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `test/pageCompare.test.js`, near the other extraction tests (after the `extractTokens finds control numbers and citations` test around line 128):
 
@@ -96,12 +110,12 @@ test('the signatory anchor is the LAST name token, not an earlier ALL-CAPS run',
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `node --test test/pageCompare.test.js`
 Expected: FAIL — all 7 new tests fail (`byClass(t, 'signatoryTitle')` returns `[]` for every case, since nothing extracts this class yet).
 
-- [ ] **Step 3: Implement extraction**
+- [x] **Step 3: Implement extraction**
 
 In `src/pageCompare.js`, add near `extractFieldTokens` (both are "runs last, uses what earlier classes already found" functions):
 
@@ -142,12 +156,12 @@ Wire it into `extractTokens`, right before the final `return`:
   return out.sort((a, b) => a.line - b.line);
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `node --test test/pageCompare.test.js`
 Expected: PASS, all 7 new tests, no regressions in the rest of the file.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/pageCompare.js test/pageCompare.test.js
@@ -171,7 +185,7 @@ EOF
 - Consumes: `extractSignatoryTitleToken` (Task 1, via `extractTokens`), `keyFor`, `similarity` (both already in this file).
 - Produces: `compareSignatoryTitle(authTokens, ocrTokens): { findings: Finding[], suppressed: number }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `test/pageCompare.test.js`, near the citation tests added 2026-09-09 (after the `compare` import is already in scope, around line 1300+):
 
@@ -226,12 +240,12 @@ test('photo has a signatory title, record has none -- no finding either way', ()
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `node --test test/pageCompare.test.js`
 Expected: FAIL — `compare()` produces no `signatoryTitle` findings at all yet (the generic passes don't know this class, and there is no dedicated comparison function).
 
-- [ ] **Step 3: Implement comparison**
+- [x] **Step 3: Implement comparison**
 
 In `src/pageCompare.js`, extend `keyFor` (the existing fold branch, so `signatoryTitle` gets the same glyph/letter-noise forgiveness `name`/`field`/`listItem`/`numberedItem` already have):
 
@@ -301,17 +315,17 @@ Wire the dedicated pass in, right after `compareNumberedItems`'s own result is m
   suppressed += signatoryTitle.suppressed;
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `node --test test/pageCompare.test.js`
 Expected: PASS, all new tests, no regressions.
 
-- [ ] **Step 5: Run the full test suite**
+- [x] **Step 5: Run the full test suite**
 
 Run: `npm test`
 Expected: PASS, no regressions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/pageCompare.js test/pageCompare.test.js
@@ -334,7 +348,7 @@ EOF
 
 **Interfaces:** none new -- this task verifies Tasks 1-2 against real data and adjusts them if reality disagrees.
 
-- [ ] **Step 1: Add the two real altered photos as committed fixtures**
+- [x] **Step 1: Add the two real altered photos as committed fixtures**
 
 These are the two real captures from this conversation showing the actual title-replacement alteration (signature kept, title collapsed to "Regional Director", date also changed to September 16). Save them as:
 - `test/fixtures/pages-special-order-383/1-altered-e.jpg` (upload `54cbd9d6-image.jpg`)
@@ -345,7 +359,7 @@ cp "C:/Users/R1-MIS/.claude/uploads/80466add-1029-4b09-8642-418c7348d8f5/54cbd9d
 cp "C:/Users/R1-MIS/.claude/uploads/80466add-1029-4b09-8642-418c7348d8f5/1494152e-image.jpg" "test/fixtures/pages-special-order-383/1-altered-e-b.jpg"
 ```
 
-- [ ] **Step 2: Write a calibration probe**
+- [x] **Step 2: Write a calibration probe**
 
 A throwaway script (not committed -- same pattern as `scripts/_spike_*.mjs` used earlier this session), run from the repo root:
 
@@ -405,7 +419,7 @@ await shutdownOcr();
 
 Run: `node scripts/_calibrate_signatory_title.mjs`
 
-- [ ] **Step 3: Evaluate against the design spec's §7 criteria and iterate if needed**
+- [x] **Step 3: Evaluate against the design spec's §7 criteria and iterate if needed**
 
 Required outcomes (per the design doc, non-negotiable before this task is done):
 - Every `genuine` photo, both documents: zero `signatoryTitle` findings (or, if extraction happens to miss on a particular noisy real photo, a `tolerant`/`missing` one -- never `material`).
@@ -417,7 +431,7 @@ If any genuine photo produces a `material` false positive, or either altered pho
 
 Re-run Step 2's probe after each change until all criteria pass. Update the constant's comment to describe what was actually measured (removing "PROVISIONAL") once real numbers back it.
 
-- [ ] **Step 4: Add a real-photo regression test**
+- [x] **Step 4: Add a real-photo regression test**
 
 Once calibration passes, add one test to `test/pageCompare.test.js` that locks in the real altered-photo behavior (adjust file paths/expected values to match whatever Step 3 actually confirmed):
 
@@ -436,18 +450,18 @@ test('real photo: the 2026-09-09 signatory-title alteration is caught (calibrati
 });
 ```
 
-- [ ] **Step 5: Run the full test suite**
+- [x] **Step 5: Run the full test suite**
 
 Run: `npm test`
 Expected: PASS, no regressions.
 
-- [ ] **Step 6: Clean up the throwaway calibration script**
+- [x] **Step 6: Clean up the throwaway calibration script**
 
 ```bash
 rm -f scripts/_calibrate_signatory_title.mjs
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add test/fixtures/pages-special-order-383/1-altered-e.jpg test/fixtures/pages-special-order-383/1-altered-e-b.jpg src/pageCompare.js test/pageCompare.test.js docs/superpowers/specs/2026-09-09-signatory-title-comparison-design.md
