@@ -72,3 +72,52 @@ test('locateFindings does not mutate its inputs', () => {
   locateFindings(findings, words);
   assert.equal(original.region, undefined, 'the input finding object must not be mutated');
 });
+
+// Real case, 2026-09-09: a genuine amount change (₱350.00 -> ₱450.00) landed
+// correctly as a material finding, but pageCompare.js's PESOS_PAREN fixes
+// synthesize the ₱ prefix onto `found` -- it was never literally what OCR
+// read (here, a single word "(450.00),", mark dropped/misread/hyphenated
+// away). The exact-text search above can never match a prefix that was
+// never really there, so money gets a second, narrower fallback: a single
+// word whose own digits match the target's digits exactly, regardless of
+// whatever punctuation/mark surrounds it.
+test('a money finding whose synthesized value has no literal match still locates via matching digits', () => {
+  const words = [wordAt('(450.00),', 0, 0.75)];
+  const findings = [{ severity: 'material', cls: 'money', line: 39, expected: '₱350.00', found: '₱450.00', reason: 'digit-substitution' }];
+  const [f] = locateFindings(findings, words);
+  assert.deepEqual(f.region, { x0: 0, y0: 0, x1: 10, y1: 8, confidence: 0.75 });
+});
+
+test('the digit fallback is scoped to money only -- an unrelated class with no literal match still gets no region', () => {
+  const words = [wordAt('(450.00),', 0)];
+  const findings = [{ severity: 'material', cls: 'citation', line: 1, expected: 'Section 12', found: '450', reason: 'text' }];
+  const [f] = locateFindings(findings, words);
+  assert.equal(f.region, undefined);
+});
+
+// Guards the fallback's own edge case: an empty digit string must never
+// match a non-numeric word by coincidence.
+test('a money found value with no digits at all does not spuriously match via the digit fallback', () => {
+  const words = [wordAt('payable', 0)];
+  const findings = [{ severity: 'material', cls: 'money', line: 1, expected: '₱50.00', found: '₱', reason: 'text' }];
+  const [f] = locateFindings(findings, words);
+  assert.equal(f.region, undefined);
+});
+
+test('an exact literal match for a money finding is preferred over the digit fallback', () => {
+  const words = [wordAt('₱450.00', 0, 0.9), wordAt('(450.00),', 50, 0.2)];
+  const findings = [{ severity: 'material', cls: 'money', line: 1, expected: '₱350.00', found: '₱450.00', reason: 'digit-substitution' }];
+  const [f] = locateFindings(findings, words);
+  assert.equal(f.region.x0, 0); // the exact literal match, not the digit-only fallback
+});
+
+test('the digit fallback does not reuse a word another finding already consumed', () => {
+  const words = [wordAt('(450.00),', 0, 0.6)];
+  const findings = [
+    { severity: 'material', cls: 'money', line: 1, expected: null, found: '₱450.00', reason: 'added' },
+    { severity: 'material', cls: 'money', line: 2, expected: null, found: '₱450.00', reason: 'added' },
+  ];
+  const [f1, f2] = locateFindings(findings, words);
+  assert.ok(f1.region, 'first finding should claim the word');
+  assert.equal(f2.region, undefined, 'second finding should find nothing left to claim');
+});

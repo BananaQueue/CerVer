@@ -68,12 +68,42 @@ function findRun(target, words, consumed) {
   return null;
 }
 
+function digitsOf(s) {
+  return (String(s ?? '').match(/\d/g) || []).join('');
+}
+
+// Fallback for money findings only, tried after findRun's exact search
+// fails. pageCompare.js's PESOS_PAREN fixes synthesize the '₱' prefix onto
+// `found` when the real currency mark was dropped, misread, or hyphenated
+// across a line wrap -- that prefix was never literally what OCR read, so
+// findRun can never match it. Real case, 2026-09-09: a genuine amount
+// change (₱350.00 -> ₱450.00) landed correctly as a material finding with
+// no box at all, since OCR's own word for it was "(450.00)," and similar --
+// never literally "₱450.00". The governing digit rule (pageCompare.js)
+// already guarantees a money finding's digits are read correctly wherever
+// the amount can be extracted at all; what varies is only the mark and
+// punctuation around them. Scoped to a single word, not a run: real
+// evidence has the amount landing as one Tesseract word regardless of the
+// mark issue. Requires at least one real digit -- an empty digit string
+// must never match the first non-numeric word by coincidence.
+function findDigitWord(targetDigits, words, consumed) {
+  if (!targetDigits) return null;
+  for (let i = 0; i < words.length; i++) {
+    if (consumed.has(i)) continue;
+    if (digitsOf(words[i].text) !== targetDigits) continue;
+    consumed.add(i);
+    return { ...words[i].bbox, confidence: words[i].confidence };
+  }
+  return null;
+}
+
 export function locateFindings(findings, words) {
   const safeWords = Array.isArray(words) ? words : [];
   const consumed = new Set();
   return findings.map((f) => {
     if (f.found === null || f.found === undefined) return { ...f };
-    const region = findRun(f.found, safeWords, consumed);
+    const region = findRun(f.found, safeWords, consumed)
+      ?? (f.cls === 'money' ? findDigitWord(digitsOf(f.found), safeWords, consumed) : null);
     return region ? { ...f, region } : { ...f };
   });
 }
